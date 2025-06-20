@@ -169,11 +169,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all indexes
+  // Get all indexes with stocks
   app.get("/api/indexes", async (req, res) => {
     try {
       const indexes = await storage.getAllIndexes();
-      res.json(indexes);
+      const indexesWithStocks = [];
+      
+      for (const index of indexes) {
+        const stocks = await storage.getStocksByIndexId(index.id);
+        indexesWithStocks.push({ ...index, stocks });
+      }
+      
+      res.json(indexesWithStocks);
     } catch (error) {
       console.error("Get indexes error:", error);
       res.status(500).json({ message: "Failed to get indexes" });

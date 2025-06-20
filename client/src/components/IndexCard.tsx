@@ -97,9 +97,30 @@ export function IndexCard({ index, variant = 'recent', onClick }: IndexCardProps
               <Calendar className="h-3 w-3" />
               <span>Created {formatDate(index.createdAt)}</span>
             </div>
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center space-x-1 relative group">
               <BarChart3 className="h-3 w-3" />
-              <span>{index.stocks?.length || 0} stocks</span>
+              <span className="cursor-help">{index.stocks?.length || 0} stocks</span>
+              {index.stocks && index.stocks.length > 0 && (
+                <div className="absolute left-0 top-6 p-3 bg-white border rounded-lg shadow-lg z-20 w-72 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto">
+                  <div className="text-sm font-medium mb-2">Holdings ({index.stocks.length} stocks):</div>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {index.stocks.map((stock, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-xs">
+                        <div>
+                          <span className="font-medium">{stock.symbol}</span>
+                          <span className="text-gray-500 ml-1">({stock.name})</span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-medium">${stock.price}</div>
+                          <div className={`text-xs ${stock.changePercent1d >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {stock.changePercent1d >= 0 ? '+' : ''}{stock.changePercent1d.toFixed(2)}%
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             {index.isPublic && (
               <div className="flex items-center space-x-1">
