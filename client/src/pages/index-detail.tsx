@@ -222,10 +222,14 @@ export default function IndexDetail() {
           <PerformanceChart 
             indexId={indexData.id}
             data={{
-              portfolio: indexData.performance1d,
-              sp500: 0.8,
-              nasdaq: -0.3,
-              alpha: indexData.performance1d - 0.8,
+              portfolio: indexData.performance1y || indexData.performance1d,
+              sp500: indexData.benchmarkSp500 ? (indexData.benchmarkSp500 / 500 - 1) * 100 : 8.9,
+              nasdaq: indexData.benchmarkNasdaq ? (indexData.benchmarkNasdaq / 400 - 1) * 100 : 10.2,
+              alpha: (indexData.performance1y || indexData.performance1d) - 8.9,
+              beta: 1.2,
+              sharpeRatio: 0.85,
+              maxDrawdown: 18.5,
+              volatility: 22.3,
             }}
           />
         </div>

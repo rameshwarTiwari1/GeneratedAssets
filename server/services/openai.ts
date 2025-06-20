@@ -29,6 +29,42 @@ export async function generateIndexFromPrompt(prompt: string): Promise<AIRespons
 function generateFallbackResponse(prompt: string): AIResponse {
   const lowerPrompt = prompt.toLowerCase();
   
+  // Check for sustainable energy first (more specific)
+  if (lowerPrompt.includes('sustainable') || lowerPrompt.includes('energy') || lowerPrompt.includes('clean') || lowerPrompt.includes('renewable')) {
+    return {
+      indexName: "Clean Energy Innovation Index",
+      description: "Leading companies driving the transition to sustainable and renewable energy sources, including solar, wind, battery technology, and electric vehicles.",
+      companies: [
+        { name: "Tesla Inc.", symbol: "TSLA", sector: "Automotive", reasoning: "Electric vehicle leader and energy storage pioneer" },
+        { name: "NextEra Energy", symbol: "NEE", sector: "Utilities", reasoning: "Largest renewable energy generator in North America" },
+        { name: "First Solar Inc.", symbol: "FSLR", sector: "Energy", reasoning: "Leading solar panel manufacturer and project developer" },
+        { name: "Enphase Energy", symbol: "ENPH", sector: "Energy", reasoning: "Solar microinverter technology and energy management" },
+        { name: "Plug Power Inc.", symbol: "PLUG", sector: "Energy", reasoning: "Hydrogen fuel cell solutions for clean energy" },
+        { name: "Brookfield Renewable", symbol: "BEP", sector: "Utilities", reasoning: "Pure-play renewable power platform" },
+        { name: "Albemarle Corporation", symbol: "ALB", sector: "Materials", reasoning: "Lithium producer for battery technology" },
+        { name: "NVIDIA Corporation", symbol: "NVDA", sector: "Technology", reasoning: "AI chips powering energy grid optimization" }
+      ]
+    };
+  }
+  
+  // Check for CEOs under 40 theme
+  if ((lowerPrompt.includes('ceo') && lowerPrompt.includes('40')) || (lowerPrompt.includes('young') && lowerPrompt.includes('ceo'))) {
+    return {
+      indexName: "Young CEO Innovation Index",
+      description: "Companies led by visionary CEOs under 40 who are disrupting traditional industries and driving technological innovation.",
+      companies: [
+        { name: "Meta Platforms Inc.", symbol: "META", sector: "Technology", reasoning: "Mark Zuckerberg - Founded Facebook at 19, now leading metaverse innovation" },
+        { name: "Snapchat Inc.", symbol: "SNAP", sector: "Technology", reasoning: "Evan Spiegel - Young CEO pioneering AR and social media innovation" },
+        { name: "Stripe Inc.", symbol: "STRP", sector: "Financial Services", reasoning: "Patrick Collison - Young fintech innovator transforming payments" },
+        { name: "Airbnb Inc.", symbol: "ABNB", sector: "Consumer Services", reasoning: "Brian Chesky - Revolutionizing travel and hospitality" },
+        { name: "DoorDash Inc.", symbol: "DASH", sector: "Consumer Services", reasoning: "Tony Xu - Leading food delivery transformation" },
+        { name: "Zoom Video", symbol: "ZM", sector: "Technology", reasoning: "Eric Yuan - Transformed remote communication" },
+        { name: "Shopify Inc.", symbol: "SHOP", sector: "Technology", reasoning: "Tobias Lütke - E-commerce platform innovation" },
+        { name: "Square Inc.", symbol: "SQ", sector: "Financial Services", reasoning: "Jack Dorsey - Fintech and payment innovation" }
+      ]
+    };
+  }
+  
   if (lowerPrompt.includes('ai') || lowerPrompt.includes('artificial intelligence')) {
     return {
       indexName: "AI Revolution Index",

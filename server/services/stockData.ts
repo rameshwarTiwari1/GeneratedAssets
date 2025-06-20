@@ -76,7 +76,13 @@ function getRealisticStockData(symbol: string): StockData {
     'ENPH': { price: 92.50, name: 'Enphase Energy Inc.', sector: 'Energy', marketCap: 12.8e9 },
     'PLUG': { price: 3.15, name: 'Plug Power Inc.', sector: 'Energy', marketCap: 1.8e9 },
     'BEP': { price: 28.90, name: 'Brookfield Renewable Partners', sector: 'Utilities', marketCap: 18.2e9 },
-    'ALB': { price: 88.75, name: 'Albemarle Corporation', sector: 'Materials', marketCap: 10.4e9 }
+    'ALB': { price: 88.75, name: 'Albemarle Corporation', sector: 'Materials', marketCap: 10.4e9 },
+    'SNAP': { price: 11.25, name: 'Snap Inc.', sector: 'Technology', marketCap: 18.1e9 },
+    'ABNB': { price: 135.60, name: 'Airbnb Inc.', sector: 'Consumer Services', marketCap: 87.2e9 },
+    'DASH': { price: 118.45, name: 'DoorDash Inc.', sector: 'Consumer Services', marketCap: 41.8e9 },
+    'ZM': { price: 69.80, name: 'Zoom Video Communications', sector: 'Technology', marketCap: 20.7e9 },
+    'SHOP': { price: 78.90, name: 'Shopify Inc.', sector: 'Technology', marketCap: 100.5e9 },
+    'SQ': { price: 71.30, name: 'Block Inc.', sector: 'Financial Services', marketCap: 41.2e9 }
   };
 
   const stockInfo = stockPrices[symbol];

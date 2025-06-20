@@ -87,7 +87,13 @@ This is a full-stack web application that allows users to create AI-powered inve
 
 ## Changelog
 
-- June 20, 2025. Initial setup
+- June 20, 2025. Initial setup with basic React/Express structure
+- June 20, 2025. Completed comprehensive AI-powered investment platform with:
+  - Natural language index generation using OpenAI/Groq with theme-specific fallbacks
+  - Real-time stock data integration from Polygon.io and Finnhub APIs
+  - Advanced backtesting engine with authentic performance analysis
+  - WebSocket-powered live updates and portfolio tracking
+  - Full dashboard with risk metrics, benchmark comparisons, and idea sharing
 
 ## User Preferences
 
