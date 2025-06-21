@@ -23,25 +23,40 @@ export function HeroSection() {
 
   const generateMutation = useMutation({
     mutationFn: async (prompt: string) => {
-      const response = await apiRequest('POST', '/api/generate-index', { prompt });
-      return response.json();
+      try {
+        const response = await fetch('http://localhost:5000/api/generate-index', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ prompt }),
+        });
+        
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(error || 'Failed to generate index');
+        }
+        
+        return await response.json();
+      } catch (error) {
+        console.error('Generation error:', error);
+        throw error;
+      }
     },
     onSuccess: (data) => {
       toast({
         title: "Index Generated Successfully!",
-        description: `Created "${data.name}" with ${data.stocks?.length || 0} stocks`,
+        description: `Successfully created "${data.name}"`,
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/indexes'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/portfolio'] });
-      setPrompt('');
+      queryClient.invalidateQueries({ queryKey: ['indexes'] });
     },
     onError: (error) => {
       toast({
         title: "Generation Failed",
-        description: error.message,
+        description: error instanceof Error ? error.message : "Failed to generate index",
         variant: "destructive",
       });
-    },
+    }
   });
 
   const handleGenerate = () => {

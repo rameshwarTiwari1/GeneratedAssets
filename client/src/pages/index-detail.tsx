@@ -19,11 +19,35 @@ import {
 } from 'lucide-react';
 import { Link } from 'wouter';
 
+interface Stock {
+  id: string;
+  symbol: string;
+  name: string;
+  weight: number;
+  price: number;
+  change: number;
+}
+
+interface IndexData {
+  id: number;
+  name: string;
+  description?: string;
+  prompt?: string;
+  isPublic: boolean;
+  totalValue: number;
+  performance1d: number;
+  performance1y?: number;
+  benchmarkSp500?: number;
+  benchmarkNasdaq?: number;
+  createdAt: string | Date;
+  stocks: Stock[];
+}
+
 export default function IndexDetail() {
   const [match, params] = useRoute('/index/:id');
   const indexId = params?.id ? parseInt(params.id) : null;
 
-  const { data: indexData, isLoading, error } = useQuery({
+  const { data: indexData, isLoading, error } = useQuery<IndexData>({
     queryKey: ['/api/index', indexId],
     enabled: !!indexId,
   });
@@ -78,14 +102,14 @@ export default function IndexDetail() {
     }).format(value);
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date: string | Date) => {
     return new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    }).format(new Date(date));
+    }).format(typeof date === 'string' ? new Date(date) : date);
   };
 
   const isPositive = indexData.performance1d >= 0;
@@ -170,7 +194,7 @@ export default function IndexDetail() {
                 <span className="text-sm text-gray-600">1D Performance</span>
               </div>
               <div className={`text-2xl font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
-                {isPositive ? '+' : ''}{indexData.performance1d.toFixed(2)}%
+                {isPositive ? '+' : ''}{indexData.performance1d?.toFixed(2) || '0.00'}%
               </div>
             </CardContent>
           </Card>
@@ -182,7 +206,7 @@ export default function IndexDetail() {
                 <span className="text-sm text-gray-600">vs S&P 500</span>
               </div>
               <div className="text-2xl font-bold text-blue-600">
-                +{(indexData.performance1d - 0.8).toFixed(2)}%
+                +{((indexData.performance1d || 0) - 0.8).toFixed(2)}%
               </div>
             </CardContent>
           </Card>
@@ -194,7 +218,7 @@ export default function IndexDetail() {
                 <span className="text-sm text-gray-600">vs NASDAQ</span>
               </div>
               <div className="text-2xl font-bold text-purple-600">
-                +{(indexData.performance1d + 0.3).toFixed(2)}%
+                +{((indexData.performance1d || 0) + 0.3).toFixed(2)}%
               </div>
             </CardContent>
           </Card>
@@ -222,10 +246,10 @@ export default function IndexDetail() {
           <PerformanceChart 
             indexId={indexData.id}
             data={{
-              portfolio: indexData.performance1y || indexData.performance1d,
+              portfolio: indexData.performance1y || indexData.performance1d || 0,
               sp500: indexData.benchmarkSp500 ? (indexData.benchmarkSp500 / 500 - 1) * 100 : 8.9,
               nasdaq: indexData.benchmarkNasdaq ? (indexData.benchmarkNasdaq / 400 - 1) * 100 : 10.2,
-              alpha: (indexData.performance1y || indexData.performance1d) - 8.9,
+              alpha: (indexData.performance1y || indexData.performance1d || 0) - 8.9,
               beta: 1.2,
               sharpeRatio: 0.85,
               maxDrawdown: 18.5,

@@ -1,10 +1,69 @@
+import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
+import { createServer } from 'http';
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+const server = createServer(app);
+
+// Enable CORS for all routes
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:5174',
+      'http://localhost:5173',
+      'http://127.0.0.1:5174',
+      'http://127.0.0.1:5173'
+    ];
+    
+    if (allowedOrigins.includes(origin) || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
+}));
+
+// Handle preflight requests
+app.options('*', cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Register API routes
+app.use('/api', (req, res, next) => {
+  // This ensures that API routes are properly mounted
+  next();
+});
+
+// Initialize routes
+const initializeApp = async () => {
+  try {
+    await registerRoutes(app);
+    console.log('Routes registered successfully');
+  } catch (err) {
+    console.error('Failed to register routes:', err);
+    process.exit(1);
+  }
+};
+
+// Initialize the application
+initializeApp().then(() => {
+  // WebSocket server will be handled by the registerRoutes function
+  console.log('Application initialized');
+}).catch((err) => {
+  console.error('Failed to initialize application:', err);
+  process.exit(1);
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
