@@ -46,6 +46,14 @@ interface IndexData {
   benchmarkNasdaq?: number;
   createdAt: string | Date;
   stocks: Stock[];
+  aiAnalysis?: {
+    investmentThesis: string;
+    riskProfile: string;
+    sectorBreakdown: string;
+    keyStrengths: string[];
+    potentialRisks: string[];
+    expectedPerformance: string;
+  };
 }
 
 export default function IndexDetail() {

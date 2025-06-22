@@ -27,6 +27,14 @@ export interface AIResponse {
   indexName: string;
   description: string;
   companies: CompanyMatch[];
+  analysis?: {
+    investmentThesis: string;
+    riskProfile: string;
+    sectorBreakdown: string;
+    keyStrengths: string[];
+    potentialRisks: string[];
+    expectedPerformance: string;
+  };
 }
 
 export async function generateIndexFromPrompt(prompt: string): Promise<AIResponse> {
@@ -66,10 +74,18 @@ export async function generateIndexFromPrompt(prompt: string): Promise<AIRespons
         messages: [
           {
             role: "system",
-            content: `You are a financial index generator. Return a JSON object with:
+            content: `You are a financial index generator and investment analyst. Return a JSON object with:
             - indexName: string (creative name for the index)
             - description: string (1-2 sentences)
-            - companies: Array<{name: string, symbol: string, sector: string, reasoning: string}> (6-10 companies)`
+            - companies: Array<{name: string, symbol: string, sector: string, reasoning: string}> (6-10 companies)
+            - analysis: {
+              investmentThesis: string (2-3 sentences explaining the investment rationale),
+              riskProfile: string (low/medium/high risk assessment),
+              sectorBreakdown: string (brief overview of sector distribution),
+              keyStrengths: Array<string> (3-4 key advantages of this portfolio),
+              potentialRisks: Array<string> (2-3 potential risks to consider),
+              expectedPerformance: string (brief outlook on expected performance)
+            }`
           },
           {
             role: "user",
@@ -115,10 +131,18 @@ export async function generateIndexFromPrompt(prompt: string): Promise<AIRespons
             messages: [
               {
                 role: "system",
-                content: `You are a financial index generator. Return a JSON object with:
+                content: `You are a financial index generator and investment analyst. Return a JSON object with:
                 - indexName: string (creative name for the index)
                 - description: string (1-2 sentences)
-                - companies: Array<{name: string, symbol: string, sector: string, reasoning: string}> (6-10 companies)`
+                - companies: Array<{name: string, symbol: string, sector: string, reasoning: string}> (6-10 companies)
+                - analysis: {
+                  investmentThesis: string (2-3 sentences explaining the investment rationale),
+                  riskProfile: string (low/medium/high risk assessment),
+                  sectorBreakdown: string (brief overview of sector distribution),
+                  keyStrengths: Array<string> (3-4 key advantages of this portfolio),
+                  potentialRisks: Array<string> (2-3 potential risks to consider),
+                  expectedPerformance: string (brief outlook on expected performance)
+                }`
               },
               {
                 role: "user",
@@ -202,7 +226,24 @@ function generateFallbackResponse(prompt: string): AIResponse {
         { name: "Fanuc Corporation", symbol: "FANUY", sector: "Industrials", reasoning: "Industrial robots and factory automation" },
         { name: "ABB Ltd", symbol: "ABB", sector: "Industrials", reasoning: "Robotics, power, and automation technology" },
         { name: "NVIDIA Corporation", symbol: "NVDA", sector: "Technology", reasoning: "AI and computer vision for robotics" }
-      ]
+      ],
+      analysis: {
+        investmentThesis: "This index focuses on companies leading the automation revolution across industries. The investment thesis centers on the long-term trend of increasing automation adoption, driven by labor shortages, efficiency demands, and technological advancement.",
+        riskProfile: "Medium-High",
+        sectorBreakdown: "Technology (37.5%), Industrials (37.5%), Healthcare (12.5%), Other (12.5%)",
+        keyStrengths: [
+          "Strong secular growth trends in automation adoption",
+          "Diversified exposure across multiple industries",
+          "High barriers to entry and strong competitive moats",
+          "Recurring revenue models with high customer retention"
+        ],
+        potentialRisks: [
+          "Economic downturns may reduce capital expenditure on automation",
+          "Rapid technological change could disrupt existing solutions",
+          "Regulatory changes in healthcare robotics"
+        ],
+        expectedPerformance: "Expected to outperform the broader market over the next 3-5 years due to strong secular growth trends in automation adoption across industries."
+      }
     };
   }
 
@@ -220,7 +261,24 @@ function generateFallbackResponse(prompt: string): AIResponse {
         { name: "Brookfield Renewable", symbol: "BEP", sector: "Utilities", reasoning: "Pure-play renewable power platform" },
         { name: "Vestas Wind Systems", symbol: "VWS.CO", sector: "Energy", reasoning: "Global wind turbine manufacturer" },
         { name: "Albemarle Corporation", symbol: "ALB", sector: "Materials", reasoning: "Lithium producer for battery technology" }
-      ]
+      ],
+      analysis: {
+        investmentThesis: "This index captures the global transition to clean energy, driven by climate change concerns, government policies, and declining renewable energy costs. The portfolio focuses on companies positioned to benefit from the multi-decade energy transition.",
+        riskProfile: "Medium",
+        sectorBreakdown: "Energy (50%), Utilities (25%), Automotive (12.5%), Materials (12.5%)",
+        keyStrengths: [
+          "Strong policy support and regulatory tailwinds",
+          "Declining costs making renewables increasingly competitive",
+          "Global scale with diversified geographic exposure",
+          "Long-term secular growth story"
+        ],
+        potentialRisks: [
+          "Policy changes could impact government support",
+          "Commodity price volatility affecting manufacturing costs",
+          "Competition from traditional energy sources during economic downturns"
+        ],
+        expectedPerformance: "Expected to deliver strong returns over the next decade as renewable energy adoption accelerates globally, though may experience volatility due to policy and commodity price fluctuations."
+      }
     };
   }
   
@@ -238,7 +296,25 @@ function generateFallbackResponse(prompt: string): AIResponse {
         { name: "Shopify Inc.", symbol: "SHOP", sector: "Technology", reasoning: "Tobias Lütke - E-commerce platform innovation" },
         { name: "Block Inc.", symbol: "SQ", sector: "Financial Services", reasoning: "Jack Dorsey - Fintech and payment innovation" },
         { name: "Palantir Technologies", symbol: "PLTR", sector: "Technology", reasoning: "Alex Karp - Big data analytics and AI innovation" }
-      ]
+      ],
+      analysis: {
+        investmentThesis: "This index focuses on companies led by young, innovative CEOs who have demonstrated the ability to disrupt traditional industries and create new markets. The thesis centers on the advantage of having leaders who grew up in the digital age and understand modern consumer behavior.",
+        riskProfile: "High",
+        sectorBreakdown: "Technology (62.5%), Consumer Services (25%), Financial Services (12.5%)",
+        keyStrengths: [
+          "Innovative leadership with fresh perspectives",
+          "Strong digital-first business models",
+          "High growth potential in emerging markets",
+          "Agile decision-making and rapid innovation cycles"
+        ],
+        potentialRisks: [
+          "Inexperience in managing large-scale operations",
+          "High valuation multiples and growth expectations",
+          "Regulatory scrutiny of tech platforms",
+          "Competition from established players"
+        ],
+        expectedPerformance: "High growth potential with significant volatility. Expected to outperform during innovation cycles but may underperform during market corrections due to high valuations."
+      }
     };
   }
   
@@ -256,7 +332,25 @@ function generateFallbackResponse(prompt: string): AIResponse {
         { name: "Tesla Inc.", symbol: "TSLA", sector: "Automotive", reasoning: "Autonomous driving AI and robotics development" },
         { name: "Palantir Technologies", symbol: "PLTR", sector: "Technology", reasoning: "Big data analytics and AI-powered decision making platforms" },
         { name: "Advanced Micro Devices", symbol: "AMD", sector: "Technology", reasoning: "High-performance computing chips for AI workloads" }
-      ]
+      ],
+      analysis: {
+        investmentThesis: "This index captures the AI revolution that is transforming every industry. The investment thesis centers on the massive productivity gains and new capabilities that AI will unlock, creating unprecedented value for companies that successfully integrate AI into their products and services.",
+        riskProfile: "Medium-High",
+        sectorBreakdown: "Technology (87.5%), Automotive (12.5%)",
+        keyStrengths: [
+          "Massive addressable market across all industries",
+          "Strong competitive moats through data and compute advantages",
+          "Recurring revenue models with high switching costs",
+          "Continuous innovation and R&D investment"
+        ],
+        potentialRisks: [
+          "Rapid technological change could disrupt current leaders",
+          "Regulatory concerns about AI safety and privacy",
+          "High capital requirements for AI infrastructure",
+          "Concentration risk in technology sector"
+        ],
+        expectedPerformance: "Expected to be one of the highest-performing sectors over the next decade as AI becomes ubiquitous, though may experience periods of volatility due to regulatory and competitive dynamics."
+      }
     };
   }
   
@@ -274,7 +368,25 @@ function generateFallbackResponse(prompt: string): AIResponse {
         { name: "Dexcom Inc.", symbol: "DXCM", sector: "Healthcare", reasoning: "Continuous glucose monitoring and digital diabetes management" },
         { name: "Teladoc Health", symbol: "TDOC", sector: "Healthcare", reasoning: "Leading telemedicine and virtual care platform" },
         { name: "Veeva Systems", symbol: "VEEV", sector: "Healthcare", reasoning: "Cloud software for pharmaceutical and biotech industries" }
-      ]
+      ],
+      analysis: {
+        investmentThesis: "This index focuses on healthcare companies leveraging technology to improve patient outcomes and reduce costs. The investment thesis centers on the convergence of healthcare and technology, driven by aging populations, rising healthcare costs, and the need for more efficient care delivery.",
+        riskProfile: "Medium",
+        sectorBreakdown: "Healthcare (100%)",
+        keyStrengths: [
+          "Defensive sector with stable demand regardless of economic conditions",
+          "High barriers to entry due to regulatory requirements",
+          "Strong intellectual property protection",
+          "Long-term demographic tailwinds"
+        ],
+        potentialRisks: [
+          "Regulatory changes could impact drug pricing and approval processes",
+          "Patent expirations leading to generic competition",
+          "High R&D costs with uncertain outcomes",
+          "Political pressure on healthcare costs"
+        ],
+        expectedPerformance: "Expected to provide stable, long-term growth with lower volatility than technology sectors, benefiting from demographic trends and technological innovation in healthcare delivery."
+      }
     };
   }
   
@@ -291,6 +403,24 @@ function generateFallbackResponse(prompt: string): AIResponse {
       { name: "NVIDIA Corporation", symbol: "NVDA", sector: "Technology", reasoning: "Advanced computing and AI chip technology" },
       { name: "Meta Platforms Inc.", symbol: "META", sector: "Technology", reasoning: "Social media and metaverse technology development" },
       { name: "Netflix Inc.", symbol: "NFLX", sector: "Communication", reasoning: "Streaming technology and content innovation" }
-    ]
+    ],
+    analysis: {
+      investmentThesis: "This index captures companies at the forefront of innovation across multiple sectors. The investment thesis centers on the long-term value creation potential of companies that consistently innovate and adapt to changing market conditions.",
+      riskProfile: "Medium-High",
+      sectorBreakdown: "Technology (75%), Automotive (12.5%), Communication (12.5%)",
+      keyStrengths: [
+        "Diversified exposure to multiple innovation themes",
+        "Strong competitive positions and market leadership",
+        "High cash flow generation and financial strength",
+        "Global scale and market reach"
+      ],
+      potentialRisks: [
+        "High valuations relative to earnings",
+        "Rapid technological change could disrupt current leaders",
+        "Regulatory scrutiny of large tech companies",
+        "Economic sensitivity of discretionary spending"
+      ],
+      expectedPerformance: "Expected to outperform the broader market over the long term due to innovation leadership, though may experience periods of volatility during market corrections."
+    }
   };
 }

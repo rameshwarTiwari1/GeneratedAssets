@@ -9,6 +9,7 @@ import {
   type InsertHistoricalData
 } from "@shared/schema";
 import { IndexModel } from "./models/Index";
+import { UserModel } from "./models/User";
 import { HistoricalDataModel } from "./models/HistoricalData";
 import mongoose from "mongoose";
 
@@ -42,6 +43,13 @@ export interface IStorage {
     activeIndexes: number;
     totalStocks: number;
     avgPerformance: number;
+  }>;
+  
+  // Global statistics methods
+  getGlobalStats(): Promise<{
+    totalIndexes: number;
+    totalUsers: number;
+    totalStocks: number;
   }>;
 }
 
@@ -222,6 +230,18 @@ export class MemStorage implements IStorage {
       avgPerformance,
     };
   }
+
+  async getGlobalStats(): Promise<{
+    totalIndexes: number;
+    totalUsers: number;
+    totalStocks: number;
+  }> {
+    return {
+      totalIndexes: this.indexes.size,
+      totalUsers: this.users.size,
+      totalStocks: this.stocks.size,
+    };
+  }
 }
 
 export const storage = new MemStorage();
@@ -277,5 +297,21 @@ export const storageMongoose = {
       cursor = cursor.where('date').gte(since.getTime());
     }
     return cursor.lean();
+  },
+  async getGlobalStats() {
+    const [totalIndexes, totalUsers, totalStocks] = await Promise.all([
+      IndexModel.countDocuments(),
+      UserModel.countDocuments(),
+      IndexModel.aggregate([
+        { $unwind: '$stocks' },
+        { $count: 'totalStocks' }
+      ]).then(result => result[0]?.totalStocks || 0)
+    ]);
+    
+    return {
+      totalIndexes,
+      totalUsers,
+      totalStocks,
+    };
   },
 };

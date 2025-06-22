@@ -159,6 +159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         performance1y: performance1y,
         benchmarkSp500: benchmarks.sp500,
         benchmarkNasdaq: benchmarks.nasdaq,
+        aiAnalysis: aiResponse.analysis, // Store AI analysis
       });
 
       // Add stocks to index
@@ -194,6 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stocks,
         backtesting: backtestingData.performance,
         alpha: alpha1y,
+        aiAnalysis: aiResponse.analysis,
       };
 
       // Broadcast new index to connected clients
@@ -866,6 +868,18 @@ app.get("/api/stock-price/:symbol", async (req, res) => {
         error: 'Failed to fetch market data',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
+    }
+  });
+
+  // Get global statistics (public route - no authentication required)
+  app.get("/api/stats", async (req, res) => {
+    const storage = storageMongoose;
+    try {
+      const stats = await storage.getGlobalStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Get stats error:", error);
+      res.status(500).json({ message: "Failed to get statistics" });
     }
   });
 

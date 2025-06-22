@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Sparkles, TrendingUp, Play } from 'lucide-react';
@@ -25,6 +25,19 @@ export function HeroSection({ onCreateIndex }: HeroSectionProps) {
   const [prompt, setPrompt] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Fetch global statistics
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['globalStats'],
+    queryFn: async () => {
+      const response = await fetch('http://localhost:5000/api/stats');
+      if (!response.ok) {
+        throw new Error('Failed to fetch statistics');
+      }
+      return response.json();
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
 
   const generateMutation = useMutation({
     mutationFn: async (prompt: string) => {
@@ -51,6 +64,7 @@ export function HeroSection({ onCreateIndex }: HeroSectionProps) {
         description: `Successfully created "${data.name}"`,
       });
       queryClient.invalidateQueries({ queryKey: ['indexes'] });
+      queryClient.invalidateQueries({ queryKey: ['globalStats'] });
     },
     onError: (error) => {
       toast({
@@ -128,16 +142,22 @@ export function HeroSection({ onCreateIndex }: HeroSectionProps) {
           {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-2xl mx-auto">
             <div className="text-center">
-              <div className="text-3xl font-bold text-white mb-2">10,000+</div>
+              <div className="text-3xl font-bold text-white mb-2">
+                {statsLoading ? '...' : (stats?.totalIndexes || 0).toLocaleString()}+
+              </div>
               <div className="text-blue-200 dark:text-blue-300">Indexes Created</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-white mb-2">$2.5B+</div>
-              <div className="text-blue-200 dark:text-blue-300">Assets Under Management</div>
+              <div className="text-3xl font-bold text-white mb-2">
+                {statsLoading ? '...' : (stats?.totalUsers || 0).toLocaleString()}+
+              </div>
+              <div className="text-blue-200 dark:text-blue-300">Active Users</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-white mb-2">98%</div>
-              <div className="text-blue-200 dark:text-blue-300">User Satisfaction</div>
+              <div className="text-3xl font-bold text-white mb-2">
+                {statsLoading ? '...' : (stats?.totalStocks || 0).toLocaleString()}+
+              </div>
+              <div className="text-blue-200 dark:text-blue-300">Stocks Tracked</div>
             </div>
           </div>
         </div>

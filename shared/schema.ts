@@ -35,6 +35,14 @@ export interface Index {
   performance1y: number;
   benchmarkSp500: number;
   benchmarkNasdaq: number;
+  aiAnalysis?: {
+    investmentThesis: string;
+    riskProfile: string;
+    sectorBreakdown: string;
+    keyStrengths: string[];
+    potentialRisks: string[];
+    expectedPerformance: string;
+  };
   stocks?: Stock[];
 }
 
@@ -51,6 +59,14 @@ export interface InsertIndex {
   performance1y?: number;
   benchmarkSp500?: number;
   benchmarkNasdaq?: number;
+  aiAnalysis?: {
+    investmentThesis: string;
+    riskProfile: string;
+    sectorBreakdown: string;
+    keyStrengths: string[];
+    potentialRisks: string[];
+    expectedPerformance: string;
+  };
 }
 
 // Stock interface
