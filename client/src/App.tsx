@@ -6,12 +6,29 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/dashboard";
 import IndexDetail from "@/pages/index-detail";
 import NotFound from "@/pages/not-found";
+import AuthPage from "@/pages/auth";
+import ProfilePage from "@/pages/profile";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/index/:id" component={IndexDetail} />
+      <Route path="/auth" component={AuthPage} />
+      <Route path="/profile">
+        <ProtectedRoute>
+          <ProfilePage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/">
+        <ProtectedRoute>
+          <Dashboard />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/index/:id">
+        <ProtectedRoute>
+          <IndexDetail />
+        </ProtectedRoute>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

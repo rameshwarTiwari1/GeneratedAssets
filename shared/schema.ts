@@ -1,88 +1,141 @@
-import { pgTable, text, serial, integer, real, timestamp, boolean } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import type { ObjectId } from 'mongoose';
 
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+// MongoDB User interface (matches the server model)
+export interface User {
+  _id: ObjectId;
+  email: string;
+  name: string;
+  profilePhoto?: string;
+  firebaseUid?: string;
+  createdAt: Date;
+  lastLogin: Date;
+}
+
+export interface InsertUser {
+  email: string;
+  name: string;
+  profilePhoto?: string;
+  firebaseUid?: string;
+}
+
+// Index interface
+export interface Index {
+  _id: ObjectId;
+  prompt: string;
+  name: string;
+  description?: string;
+  userId: string;
+  createdAt: Date;
+  isPublic: boolean;
+  totalValue: number;
+  performance1d: number;
+  performance7d: number;
+  performance30d: number;
+  performance1y: number;
+  benchmarkSp500: number;
+  benchmarkNasdaq: number;
+  stocks?: Stock[];
+}
+
+export interface InsertIndex {
+  prompt: string;
+  name: string;
+  description?: string;
+  userId?: string;
+  isPublic?: boolean;
+  totalValue?: number;
+  performance1d?: number;
+  performance7d?: number;
+  performance30d?: number;
+  performance1y?: number;
+  benchmarkSp500?: number;
+  benchmarkNasdaq?: number;
+}
+
+// Stock interface
+export interface Stock {
+  _id?: ObjectId;
+  indexId: string | ObjectId;
+  symbol: string;
+  name: string;
+  price: number;
+  sector?: string;
+  marketCap?: number;
+  weight: number;
+  change1d: number;
+  changePercent1d: number;
+}
+
+export interface InsertStock {
+  indexId: string | ObjectId;
+  symbol: string;
+  name: string;
+  price: number;
+  sector?: string;
+  marketCap?: number;
+  weight?: number;
+  change1d?: number;
+  changePercent1d?: number;
+}
+
+// Historical data interface
+export interface HistoricalData {
+  _id?: ObjectId;
+  indexId: string | ObjectId;
+  date: Date;
+  value: number;
+  sp500Value: number;
+  nasdaqValue: number;
+}
+
+export interface InsertHistoricalData {
+  indexId: string | ObjectId;
+  date: Date;
+  value: number;
+  sp500Value: number;
+  nasdaqValue: number;
+}
+
+// Zod schemas for validation
+export const insertUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1),
+  profilePhoto: z.string().optional(),
+  firebaseUid: z.string().optional(),
 });
 
-export const indexes = pgTable("indexes", {
-  id: serial("id").primaryKey(),
-  prompt: text("prompt").notNull(),
-  name: text("name").notNull(),
-  description: text("description"),
-  userId: integer("user_id").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  isPublic: boolean("is_public").default(false).notNull(),
-  totalValue: real("total_value").default(0).notNull(),
-  performance1d: real("performance_1d").default(0).notNull(),
-  performance7d: real("performance_7d").default(0).notNull(),
-  performance30d: real("performance_30d").default(0).notNull(),
-  performance1y: real("performance_1y").default(0).notNull(),
-  benchmarkSp500: real("benchmark_sp500").default(0).notNull(),
-  benchmarkNasdaq: real("benchmark_nasdaq").default(0).notNull(),
+export const insertIndexSchema = z.object({
+  prompt: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  userId: z.string().optional(),
+  isPublic: z.boolean().default(false),
+  totalValue: z.number().default(0),
+  performance1d: z.number().default(0),
+  performance7d: z.number().default(0),
+  performance30d: z.number().default(0),
+  performance1y: z.number().default(0),
+  benchmarkSp500: z.number().default(0),
+  benchmarkNasdaq: z.number().default(0),
 });
 
-export const stocks = pgTable("stocks", {
-  id: serial("id").primaryKey(),
-  indexId: integer("index_id").references(() => indexes.id).notNull(),
-  symbol: text("symbol").notNull(),
-  name: text("name").notNull(),
-  price: real("price").notNull(),
-  sector: text("sector"),
-  marketCap: real("market_cap"),
-  weight: real("weight").default(1).notNull(),
-  change1d: real("change_1d").default(0).notNull(),
-  changePercent1d: real("change_percent_1d").default(0).notNull(),
+export const insertStockSchema = z.object({
+  indexId: z.union([z.string(), z.any()]), // ObjectId
+  symbol: z.string().min(1),
+  name: z.string().min(1),
+  price: z.number(),
+  sector: z.string().optional(),
+  marketCap: z.number().optional(),
+  weight: z.number().default(1),
+  change1d: z.number().default(0),
+  changePercent1d: z.number().default(0),
 });
 
-export const historicalData = pgTable("historical_data", {
-  id: serial("id").primaryKey(),
-  indexId: integer("index_id").references(() => indexes.id).notNull(),
-  date: timestamp("date").notNull(),
-  value: real("value").notNull(),
-  sp500Value: real("sp500_value").notNull(),
-  nasdaqValue: real("nasdaq_value").notNull(),
+export const insertHistoricalDataSchema = z.object({
+  indexId: z.union([z.string(), z.any()]), // ObjectId
+  date: z.date(),
+  value: z.number(),
+  sp500Value: z.number(),
+  nasdaqValue: z.number(),
 });
-
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-});
-
-export const insertIndexSchema = createInsertSchema(indexes).pick({
-  prompt: true,
-  name: true,
-  description: true,
-  isPublic: true,
-}).extend({
-  totalValue: z.number().optional(),
-  performance1d: z.number().optional(),
-  performance7d: z.number().optional(),
-  performance30d: z.number().optional(),
-  performance1y: z.number().optional(),
-  benchmarkSp500: z.number().optional(),
-  benchmarkNasdaq: z.number().optional(),
-});
-
-export const insertStockSchema = createInsertSchema(stocks).omit({
-  id: true,
-});
-
-export const insertHistoricalDataSchema = createInsertSchema(historicalData).omit({
-  id: true,
-});
-
-export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-
-export type Index = typeof indexes.$inferSelect;
-export type InsertIndex = z.infer<typeof insertIndexSchema>;
-
-export type Stock = typeof stocks.$inferSelect;
-export type InsertStock = z.infer<typeof insertStockSchema>;
-
-export type HistoricalData = typeof historicalData.$inferSelect;
-export type InsertHistoricalData = z.infer<typeof insertHistoricalDataSchema>;

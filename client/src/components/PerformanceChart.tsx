@@ -1,24 +1,58 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
-import { BarChart3, TrendingUp } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { useState, useEffect } from 'react';
+import { BarChart3, TrendingUp, Sparkles, RefreshCw, ExternalLink } from 'lucide-react';
+import { authService } from '@/lib/auth';
+import { toast } from '@/hooks/use-toast';
+import { useQuery } from '@tanstack/react-query';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
 
 interface PerformanceChartProps {
-  indexId?: number;
-  data?: {
-    portfolio: number;
+  indexId: string;
+}
+
+interface NapkinChartData {
+  title: string;
+  description: string;
+  data: Array<{
+    label: string;
+    value: number;
+    change: number;
+    sector?: string;
+  }>;
+  performance: {
+    '1d': number;
+    '7d': number;
+    '30d': number;
+    '1y': number;
+  };
+  benchmarks: {
     sp500: number;
     nasdaq: number;
-    alpha: number;
-    beta?: number;
-    sharpeRatio?: number;
-    maxDrawdown?: number;
-    volatility?: number;
   };
 }
 
-export function PerformanceChart({ indexId, data }: PerformanceChartProps) {
+const timeRanges = [
+  { label: '1Y', value: '1Y' },
+  { label: '5Y', value: '5Y' },
+  { label: '10Y', value: '10Y' },
+];
+
+export function PerformanceChart({ indexId }: PerformanceChartProps) {
   const [selectedPeriod, setSelectedPeriod] = useState('1M');
+  const [napkinChartData, setNapkinChartData] = useState<NapkinChartData | null>(null);
+  const [isGeneratingChart, setIsGeneratingChart] = useState(false);
+  const [chartError, setChartError] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState('10Y');
   
   const periods = [
     { label: '1D', value: '1D' },
@@ -28,111 +62,188 @@ export function PerformanceChart({ indexId, data }: PerformanceChartProps) {
     { label: '1Y', value: '1Y' },
   ];
 
-  const performanceData = data || {
-    portfolio: 12.4,
-    sp500: 8.9,
-    nasdaq: 10.2,
-    alpha: 3.5,
+  const { data: backtestData, isLoading, error } = useQuery({
+    queryKey: ['backtest', indexId, timeRange],
+    queryFn: async () => {
+      const response = await authService.apiRequest(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/indexes/backtest/${indexId}?period=${timeRange}`
+      );
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch backtest data');
+      }
+      return response.json();
+    },
+    enabled: !!indexId,
+  });
+
+  const generateNapkinChart = async () => {
+    if (!indexId) {
+      toast({
+        title: "Error",
+        description: "Index ID is required to generate chart",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsGeneratingChart(true);
+    setChartError(null);
+
+    try {
+      const token = authService.getToken();
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/napkin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ indexId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to generate chart');
+      }
+
+      const chartData = await response.json();
+      setNapkinChartData(chartData);
+      
+      toast({
+        title: "Success!",
+        description: "Napkin AI chart generated successfully",
+      });
+    } catch (error) {
+      console.error('Napkin chart generation error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate chart';
+      setChartError(errorMessage);
+      
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingChart(false);
+    }
+  };
+
+  const openNapkinEditor = () => {
+    if (napkinChartData) {
+      // Open Napkin AI editor with the chart data
+      const napkinUrl = `https://napkin.ai/create?data=${encodeURIComponent(JSON.stringify(napkinChartData))}`;
+      window.open(napkinUrl, '_blank');
+    }
+  };
+
+  const formatPercent = (value: number) => {
+    if (typeof value !== 'number') return 'N/A';
+    return `${value.toFixed(2)}%`;
+  }
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const assetData = payload.find((p: any) => p.dataKey === 'asset');
+      const benchmarkData = payload.find((p: any) => p.dataKey === 'benchmark');
+      return (
+        <div className="p-3 bg-gray-800/80 backdrop-blur-sm text-white rounded-lg shadow-lg border border-gray-700">
+          <p className="font-bold text-base mb-2">{label}</p>
+          {assetData && <p style={{ color: '#8b5cf6' }}>Asset: {formatPercent(assetData.value)}</p>}
+          {benchmarkData && <p style={{ color: '#60a5fa' }}>S&P 500: {formatPercent(benchmarkData.value)}</p>}
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
-    <Card>
+    <Card className="glass-card hover-lift">
       <CardHeader>
         <div className="flex justify-between items-center">
-          <CardTitle className="text-xl font-semibold">Portfolio Performance</CardTitle>
+          <CardTitle className="text-xl font-semibold text-gradient">Backtest Performance</CardTitle>
           <div className="flex space-x-2">
-            {periods.map((period) => (
+            {timeRanges.map((range) => (
               <Button
-                key={period.value}
-                variant={selectedPeriod === period.value ? "default" : "outline"}
+                key={range.value}
+                variant={timeRange === range.value ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setSelectedPeriod(period.value)}
-                className="px-3 py-1 text-sm"
+                onClick={() => setTimeRange(range.value)}
+                className={`px-3 py-1 text-sm transition-all duration-200 ${
+                  timeRange === range.value 
+                    ? 'gradient-primary text-white shadow-lg' 
+                    : 'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
               >
-                {period.label}
+                {range.label}
               </Button>
             ))}
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        {/* Chart Placeholder */}
-        <div className="h-80 bg-gray-50 rounded-lg flex items-center justify-center mb-6">
-          <div className="text-center">
-            <BarChart3 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500 font-medium">Interactive Performance Chart</p>
-            <p className="text-sm text-gray-400">Portfolio vs S&P 500 vs NASDAQ</p>
-            <p className="text-xs text-gray-400 mt-2">Chart integration coming soon</p>
+        {isLoading ? (
+          <div className="h-96 flex items-center justify-center">
+            <div className="w-8 h-8 border-4 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
           </div>
-        </div>
-
-        {/* Performance Summary */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="text-center p-4 bg-green-50 rounded-lg">
-            <div className="flex items-center justify-center space-x-1 mb-1">
-              <TrendingUp className="h-4 w-4 text-green-600" />
-              <div className="text-2xl font-bold text-green-600">
-                {performanceData.portfolio > 0 ? '+' : ''}{performanceData.portfolio.toFixed(1)}%
+        ) : error ? (
+           <div className="h-96 flex items-center justify-center text-red-500">
+            Error: {(error as Error).message}
+          </div>
+        ) : backtestData ? (
+          <>
+            <div className="grid grid-cols-2 gap-4 mb-6 text-center">
+              <div>
+                <p className="text-sm text-gray-400">Total returns</p>
+                <p className="text-3xl font-bold text-green-400">{formatPercent(backtestData.totalReturn)}</p>
+                <p className="text-sm text-gray-500">{formatPercent(backtestData.sp500TotalReturn)} S&P</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">Max drawdown</p>
+                <p className="text-3xl font-bold text-red-400">{formatPercent(backtestData.maxDrawdown)}</p>
+                <p className="text-sm text-gray-500">{formatPercent(backtestData.sp500MaxDrawdown)} S&P</p>
               </div>
             </div>
-            <div className="text-sm text-gray-600">Portfolio Return</div>
-          </div>
-          
-          <div className="text-center p-4 bg-gray-50 rounded-lg">
-            <div className="text-2xl font-bold text-gray-700">
-              {performanceData.sp500 > 0 ? '+' : ''}{performanceData.sp500.toFixed(1)}%
+            <div className="h-96">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={backtestData.chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id="colorAsset" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                    </linearGradient>
+                     <linearGradient id="colorBenchmark" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#60a5fa" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#9ca3af"
+                    tick={{ fill: '#6b7280' }}
+                    tickLine={{ stroke: '#4b5563' }}
+                    axisLine={{ stroke: '#4b5563' }}
+                  />
+                  <YAxis 
+                    stroke="#9ca3af" 
+                    tickFormatter={(value) => `${value}%`}
+                    tick={{ fill: '#6b7280' }}
+                    tickLine={{ stroke: '#4b5563' }}
+                    axisLine={{ stroke: '#4b5563' }}
+                  />
+                  <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#a78bfa', strokeDasharray: '3 3' }}/>
+                  <Legend />
+                  <Area type="monotone" dataKey="asset" name="Asset" stroke="#8b5cf6" fill="url(#colorAsset)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="benchmark" name="S&P 500" stroke="#60a5fa" fill="url(#colorBenchmark)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
-            <div className="text-sm text-gray-600">S&P 500 Return</div>
-          </div>
-          
-          <div className="text-center p-4 bg-blue-50 rounded-lg">
-            <div className="flex items-center justify-center space-x-1 mb-1">
-              <TrendingUp className="h-4 w-4 text-blue-600" />
-              <div className={`text-2xl font-bold ${performanceData.alpha >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                {performanceData.alpha > 0 ? '+' : ''}{performanceData.alpha.toFixed(1)}%
-              </div>
-            </div>
-            <div className="text-sm text-gray-600">Alpha Generated</div>
-          </div>
-
-          <div className="text-center p-4 bg-purple-50 rounded-lg">
-            <div className="text-2xl font-bold text-purple-600">
-              {performanceData.beta?.toFixed(2) || '1.00'}
-            </div>
-            <div className="text-sm text-gray-600">Beta</div>
-          </div>
-        </div>
-
-        {/* Risk Metrics */}
-        {(performanceData.sharpeRatio || performanceData.maxDrawdown || performanceData.volatility) && (
-          <div className="mt-6">
-            <h3 className="text-lg font-semibold mb-4">Risk Analysis</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {performanceData.sharpeRatio && (
-                <div className="p-4 border rounded-lg">
-                  <div className="text-lg font-bold">{performanceData.sharpeRatio.toFixed(2)}</div>
-                  <div className="text-sm text-gray-600">Sharpe Ratio</div>
-                  <div className="text-xs text-gray-500 mt-1">Risk-adjusted returns</div>
-                </div>
-              )}
-              
-              {performanceData.maxDrawdown && (
-                <div className="p-4 border rounded-lg">
-                  <div className="text-lg font-bold text-red-600">-{performanceData.maxDrawdown.toFixed(1)}%</div>
-                  <div className="text-sm text-gray-600">Max Drawdown</div>
-                  <div className="text-xs text-gray-500 mt-1">Largest peak-to-trough decline</div>
-                </div>
-              )}
-              
-              {performanceData.volatility && (
-                <div className="p-4 border rounded-lg">
-                  <div className="text-lg font-bold text-orange-600">{performanceData.volatility.toFixed(1)}%</div>
-                  <div className="text-sm text-gray-600">Volatility</div>
-                  <div className="text-xs text-gray-500 mt-1">Annualized standard deviation</div>
-                </div>
-              )}
-            </div>
-          </div>
+          </>
+        ) : (
+          <div className="h-96 flex items-center justify-center text-gray-500">No data available</div>
         )}
       </CardContent>
     </Card>

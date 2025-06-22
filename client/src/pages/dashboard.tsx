@@ -5,9 +5,11 @@ import { Badge } from '@/components/ui/badge';
 import { HeroSection } from '@/components/HeroSection';
 import { IndexCard } from '@/components/IndexCard';
 import { PerformanceChart } from '@/components/PerformanceChart';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { CreateIndexModal } from '@/components/CreateIndexModal';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Search, X, Plus } from 'lucide-react';
+import { Search, X, Plus, LogOut, User, Settings } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { debounce } from '@/utils/debounce';
 import { useToast } from '@/hooks/use-toast';
@@ -23,7 +25,16 @@ import {
   Gamepad2,
   PillBottle
 } from 'lucide-react';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
+import { authService, AuthUser } from '@/lib/auth';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 // Type definitions
 interface WebSocketMessage {
@@ -47,13 +58,23 @@ interface CustomStock {
 }
 
 interface IndexData {
-  id: string;
+  _id: string;
   name: string;
   stocks?: any[];
   performance7d?: number;
+  performance1d?: number;
   createdAt: string;
   tags?: string[];
   creator?: string;
+  description?: string;
+  prompt?: string;
+  userId?: string;
+  isPublic?: boolean;
+  totalValue?: number;
+  performance30d?: number;
+  performance1y?: number;
+  benchmarkSp500?: number;
+  benchmarkNasdaq?: number;
 }
 
 interface TrendingData {
@@ -100,11 +121,14 @@ interface StockPriceResponse {
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<StockSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState<boolean>(false);
   const [customStocks, setCustomStocks] = useState<CustomStock[]>([]);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
   // Ref for the search container to handle outside clicks
   const searchContainerRef = useRef<HTMLDivElement>(null);
@@ -113,11 +137,54 @@ export default function Dashboard() {
   const lastMessage = null;
   const isConnected = false;
 
+  // Get current user
+  useEffect(() => {
+    const currentUser = authService.getUser();
+    if (currentUser) {
+      setUser(currentUser);
+    } else {
+      // If no user, redirect to auth
+      setLocation('/auth');
+    }
+  }, [setLocation]);
+
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      await authService.logout();
+      setUser(null);
+      setLocation('/auth');
+      toast({
+        title: "Logged out successfully",
+        description: "You have been logged out of your account.",
+      });
+    } catch (error) {
+      toast({
+        title: "Logout failed",
+        description: "There was an error logging out. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Get user initials for avatar
+  const getUserInitials = (user: AuthUser): string => {
+    if (user.name) {
+      return user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    }
+    return user.email.slice(0, 2).toUpperCase();
+  };
+
+  // Get display name
+  const getDisplayName = (user: AuthUser): string => {
+    return user.name || user.email.split('@')[0];
+  };
+
   // Fetch recent indexes
   const { data: indexes = [], isLoading: indexesLoading } = useQuery({
     queryKey: ['indexes'],
     queryFn: async (): Promise<IndexData[]> => {
-      const response = await fetch('http://localhost:5000/api/indexes');
+      const response = await authService.apiRequest('http://localhost:5000/api/indexes');
       if (!response.ok) {
         throw new Error('Failed to fetch indexes');
       }
@@ -141,7 +208,7 @@ export default function Dashboard() {
   const { data: portfolio } = useQuery({
     queryKey: ['portfolio'],
     queryFn: async (): Promise<PortfolioData> => {
-      const response = await fetch('http://localhost:5000/api/portfolio');
+      const response = await authService.apiRequest('http://localhost:5000/api/portfolio');
       if (!response.ok) {
         throw new Error('Failed to fetch portfolio');
       }
@@ -184,17 +251,19 @@ export default function Dashboard() {
   };
 
   // Map the trending indexes to match the expected format
-  const trendingData: TrendingData[] = trendingIndexes.map((index: IndexData) => ({
-    id: index.id,
-    name: index.name,
-    stocks: index.stocks?.length || 0,
-    performance: index.performance7d || 0,
-    createdAt: index.createdAt,
-    isPositive: (index.performance7d || 0) >= 0,
-    badge: index.tags?.[0] || 'Trending',
-    badgeColor: getBadgeColor(index.tags?.[0] || 'Trending'),
-    creator: index.creator || '@Investor'
-  }));
+  const trendingData: TrendingData[] = trendingIndexes
+    .filter((index: IndexData) => index.isPublic === true) // Additional safety filter
+    .map((index: IndexData) => ({
+      id: index._id,
+      name: index.name,
+      stocks: index.stocks?.length || 0,
+      performance: index.performance7d || 0,
+      createdAt: index.createdAt,
+      isPositive: (index.performance7d || 0) >= 0,
+      badge: index.tags?.[0] || 'Trending',
+      badgeColor: getBadgeColor(index.tags?.[0] || 'Trending'),
+      creator: index.creator || '@Investor'
+    }));
 console.log("trendingData",trendingData);
 
   // Search function - only called by debounced function
@@ -317,6 +386,11 @@ console.log("trendingData",trendingData);
     });
   };
 
+  // Handle navigation to index detail
+  const handleIndexClick = (indexId: string) => {
+    setLocation(`/index/${indexId}`);
+  };
+
   // Handle outside clicks to close dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -344,44 +418,87 @@ console.log("trendingData",trendingData);
   }, [debouncedSearch]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-indigo-50/30 dark:from-gray-900 dark:via-blue-950/30 dark:to-indigo-950/30">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      <header className="glass-card border-b border-gray-200/50 dark:border-gray-800/50 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-8">
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <div className="w-8 h-8 gradient-primary rounded-lg flex items-center justify-center shadow-lg">
                   <BarChart3 className="h-4 w-4 text-white" />
                 </div>
-                <span className="text-xl font-bold text-gray-900">Generated Assets</span>
-                <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700">BETA</Badge>
+                <span className="text-xl font-bold text-gradient">Generated Assets</span>
+                <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">BETA</Badge>
               </div>
               <nav className="hidden md:flex space-x-6">
-                <Link href="/" className="text-gray-900 font-medium border-b-2 border-blue-600 pb-4">
+                <Link href="/" className="text-gray-900 dark:text-gray-100 font-medium border-b-2 border-blue-600 dark:border-blue-400 pb-4 transition-colors">
                   Dashboard
                 </Link>
-                <Link href="/indexes" className="text-gray-600 hover:text-gray-900 pb-4">
+                <Link href="/indexes" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 pb-4 transition-colors">
                   My Indexes
                 </Link>
-                <Link href="/explore" className="text-gray-600 hover:text-gray-900 pb-4">
+                <Link href="/explore" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 pb-4 transition-colors">
                   Explore
                 </Link>
-                <Link href="/analytics" className="text-gray-600 hover:text-gray-900 pb-4">
+                <Link href="/analytics" className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 pb-4 transition-colors">
                   Analytics
                 </Link>
               </nav>
             </div>
             <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm">
+              <ThemeToggle />
+              <Button variant="ghost" size="sm" className="hover:bg-gray-100 dark:hover:bg-gray-800">
                 <Bell className="h-4 w-4" />
               </Button>
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-sm font-medium">JD</span>
-                </div>
-                <span className="text-sm font-medium text-gray-900">John Doe</span>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="flex items-center space-x-2 hover:bg-gray-100 dark:hover:bg-gray-800">
+                    <div className="w-8 h-8 gradient-primary rounded-full flex items-center justify-center overflow-hidden shadow-lg">
+                      {user?.profilePhoto ? (
+                        <img 
+                          src={user.profilePhoto} 
+                          alt="Profile" 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-white text-sm font-medium">
+                          {user ? getUserInitials(user) : 'U'}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {user ? getDisplayName(user) : 'User'}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56 glass-card">
+                  <DropdownMenuLabel>
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">
+                        {user ? getDisplayName(user) : 'User'}
+                      </p>
+                      <p className="text-xs leading-none text-muted-foreground">
+                        {user?.email || 'user@example.com'}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setLocation('/profile')}>
+                    <User className="mr-2 h-4 w-4" />
+                    <span>Profile</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem>
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>Settings</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Log out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
@@ -389,17 +506,17 @@ console.log("trendingData",trendingData);
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Hero Section */}
-        <HeroSection />
+        <HeroSection onCreateIndex={() => setIsCreateModalOpen(true)} />
 
         {/* Dashboard Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           {/* Left Column: Recent Indexes */}
           <div className="lg:col-span-2">
-            <Card>
+            <Card className="glass-card hover-lift">
               <CardHeader>
                 <div className="flex justify-between items-center">
-                  <CardTitle className="text-xl font-semibold">Recent Indexes</CardTitle>
-                  <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700">
+                  <CardTitle className="text-xl font-semibold text-gradient">Recent Indexes</CardTitle>
+                  <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
                     View All
                   </Button>
                 </div>
@@ -409,20 +526,29 @@ console.log("trendingData",trendingData);
                   <div className="space-y-4">
                     {[1, 2, 3].map((i) => (
                       <div key={i} className="animate-pulse">
-                        <div className="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                        <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/3 mb-2"></div>
+                        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
                       </div>
                     ))}
                   </div>
                 ) : indexes.length > 0 ? (
                   <div className="space-y-0">
                     {indexes.slice(0, 5).map((index: IndexData) => (
-                      <IndexCard key={index.id} index={index} />
+                      <IndexCard
+                        key={index._id}
+                        index={{
+                          ...index,
+                          creatorName: index.userId === user?.id ? user?.name : undefined,
+                        }}
+                        currentUserId={user?.id}
+                        onPublicToggle={() => queryClient.invalidateQueries({ queryKey: ['indexes'] })}
+                        onClick={() => handleIndexClick(index._id)}
+                      />
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <BarChart3 className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <BarChart3 className="h-12 w-12 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
                     <p>No indexes created yet</p>
                     <p className="text-sm">Use the form above to create your first index</p>
                   </div>
@@ -434,37 +560,37 @@ console.log("trendingData",trendingData);
           {/* Right Column: Portfolio Stats */}
           <div className="space-y-6">
             {/* Portfolio Summary */}
-            <Card>
+            <Card className="glass-card hover-lift">
               <CardHeader>
-                <CardTitle className="text-lg font-semibold">Portfolio Summary</CardTitle>
+                <CardTitle className="text-lg font-semibold text-gradient">Portfolio Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <span className="text-sm text-gray-600">Total Value</span>
-                    <span className="text-2xl font-bold text-gray-900">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Total Value</span>
+                    <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                       {formatCurrency(portfolio?.totalValue || 0)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Today's Change</span>
-                    <span className="text-lg font-semibold text-green-600">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Today's Change</span>
+                    <span className="text-lg font-semibold performance-positive">
                       +{formatCurrency(portfolio?.totalChange1d || 0)} (+{(portfolio?.totalChangePercent1d || 0).toFixed(1)}%)
                     </span>
                   </div>
                 </div>
-                <div className="border-t border-gray-100 pt-4 space-y-2">
+                <div className="border-t border-gray-100 dark:border-gray-800 pt-4 space-y-2">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Active Indexes</span>
-                    <span className="font-semibold text-gray-900">{portfolio?.activeIndexes || 0}</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Active Indexes</span>
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">{portfolio?.activeIndexes || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Total Stocks</span>
-                    <span className="font-semibold text-gray-900">{portfolio?.totalStocks || 0}</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Total Stocks</span>
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">{portfolio?.totalStocks || 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Avg. Performance</span>
-                    <span className="font-semibold text-green-600">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Avg. Performance</span>
+                    <span className="font-semibold performance-positive">
                       +{(portfolio?.avgPerformance || 0).toFixed(1)}%
                     </span>
                   </div>
@@ -473,10 +599,10 @@ console.log("trendingData",trendingData);
             </Card>
 
             {/* Market Overview */}
-            <Card>
+            <Card className="glass-card hover-lift">
               <CardHeader>
                 <div className="flex justify-between items-center">
-                  <CardTitle className="text-lg font-semibold">Market Overview</CardTitle>
+                  <CardTitle className="text-lg font-semibold text-gradient">Market Overview</CardTitle>
                   <div className="relative" ref={searchContainerRef}>
                     <div className="flex items-center space-x-1">
                       <Search className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2 z-10" />
@@ -484,31 +610,31 @@ console.log("trendingData",trendingData);
                         placeholder="Search stocks..."
                         value={searchQuery}
                         onChange={(e) => handleSearchChange(e.target.value)}
-                        className="pl-9 h-8 text-sm w-32"
+                        className="pl-9 h-8 text-sm w-32 bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
                       />
                     </div>
                     
                     {/* Search Dropdown */}
                     {showSearchDropdown && (
-                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-20 max-h-48 overflow-y-auto">
+                      <div className="absolute top-full left-0 right-0 mt-1 glass-card border border-gray-200 dark:border-gray-700 shadow-lg z-20 max-h-48 overflow-y-auto">
                         {isSearching ? (
-                          <div className="p-3 text-center text-sm text-gray-500">Searching...</div>
+                          <div className="p-3 text-center text-sm text-gray-500 dark:text-gray-400">Searching...</div>
                         ) : searchResults.length > 0 ? (
                           searchResults.slice(0, 5).map((stock) => (
                             <button
                               key={stock.symbol}
                               onClick={() => addCustomStock(stock)}
-                              className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center justify-between"
+                              className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center justify-between transition-colors"
                             >
                               <div>
-                                <div className="font-medium text-sm">{stock.symbol}</div>
-                                <div className="text-xs text-gray-500 truncate">{stock.name}</div>
+                                <div className="font-medium text-sm text-gray-900 dark:text-gray-100">{stock.symbol}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{stock.name}</div>
                               </div>
                               <Plus className="h-4 w-4 text-gray-400" />
                             </button>
                           ))
                         ) : (
-                          <div className="p-3 text-center text-sm text-gray-500">No results found</div>
+                          <div className="p-3 text-center text-sm text-gray-500 dark:text-gray-400">No results found</div>
                         )}
                       </div>
                     )}
@@ -519,13 +645,13 @@ console.log("trendingData",trendingData);
                 {/* Custom Added Stocks */}
                 {customStocks.map((stock: CustomStock) => (
                   <div key={stock.symbol} className="flex justify-between items-center group">
-                    <span className="text-sm text-gray-600">{stock.symbol}</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">{stock.symbol}</span>
                     <div className="flex items-center space-x-2">
                       <div className="text-right">
-                        <div className="font-semibold text-gray-900">
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">
                           ${stock.value.toFixed(2)}
                         </div>
-                        <div className={`text-sm ${stock.changePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <div className={`text-sm ${stock.changePercent >= 0 ? 'performance-positive' : 'performance-negative'}`}>
                           {stock.changePercent >= 0 ? '+' : ''}{stock.change?.toFixed(2)} ({stock.changePercent >= 0 ? '+' : ''}{stock.changePercent?.toFixed(2)}%)
                         </div>
                       </div>
@@ -556,15 +682,15 @@ console.log("trendingData",trendingData);
                       
                       return (
                         <div key={key} className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">{name}</span>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">{name}</span>
                           <div className="text-right">
-                            <div className="font-semibold text-gray-900">
+                            <div className="font-semibold text-gray-900 dark:text-gray-100">
                               {parseFloat(data.value).toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2
                               })}
                             </div>
-                            <div className={`text-sm ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                            <div className={`text-sm ${isPositive ? 'performance-positive' : 'performance-negative'}`}>
                               {changeSign}{data.change?.toFixed(2)} ({changeSign}{data.changePercent?.toFixed(2)}%)
                             </div>
                           </div>
@@ -577,8 +703,8 @@ console.log("trendingData",trendingData);
                   <div className="space-y-4">
                     {[1, 2, 3, 4].map((i) => (
                       <div key={i} className="animate-pulse">
-                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-1"></div>
-                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                        <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-1"></div>
+                        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
                       </div>
                     ))}
                   </div>
@@ -587,23 +713,23 @@ console.log("trendingData",trendingData);
             </Card>
 
             {/* AI Suggestions */}
-            <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+            <Card className="gradient-card hover-lift">
               <CardContent className="p-6">
                 <div className="flex items-center space-x-2 mb-3">
-                  <Lightbulb className="h-5 w-5 text-blue-600" />
-                  <h3 className="text-lg font-semibold text-blue-900">AI Suggestions</h3>
+                  <Lightbulb className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                  <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100">AI Suggestions</h3>
                 </div>
-                <p className="text-sm text-blue-800 mb-4">Based on market trends and your portfolio:</p>
+                <p className="text-sm text-blue-800 dark:text-blue-200 mb-4">Based on market trends and your portfolio:</p>
                 <div className="space-y-2">
                   <Button 
                     variant="outline" 
-                    className="w-full justify-start text-left p-3 bg-white hover:bg-blue-50 border-blue-200 text-sm"
+                    className="w-full justify-start text-left p-3 bg-white/80 dark:bg-gray-900/80 hover:bg-blue-50 dark:hover:bg-blue-950/50 border-blue-200 dark:border-blue-800 text-sm"
                   >
                     "Cybersecurity leaders" - High growth potential
                   </Button>
                   <Button 
                     variant="outline" 
-                    className="w-full justify-start text-left p-3 bg-white hover:bg-blue-50 border-blue-200 text-sm"
+                    className="w-full justify-start text-left p-3 bg-white/80 dark:bg-gray-900/80 hover:bg-blue-50 dark:hover:bg-blue-950/50 border-blue-200 dark:border-blue-800 text-sm"
                   >
                     "ESG dividend stocks" - Sustainable income
                   </Button>
@@ -614,13 +740,13 @@ console.log("trendingData",trendingData);
         </div>
 
         {/* Trending Indexes */}
-        <Card className="mb-8">
+        <Card className="glass-card hover-lift mb-8">
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle className="text-xl font-semibold">Your Trending Indexes</CardTitle>
+              <CardTitle className="text-xl font-semibold text-gradient">Trending Indexes</CardTitle>
               <div className="flex space-x-2">
-                <Button variant="default" size="sm">This Week</Button>
-                <Button variant="outline" size="sm">This Month</Button>
+                <Button variant="default" size="sm" className="gradient-primary">This Week</Button>
+                <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-700">This Month</Button>
               </div>
             </div>
           </CardHeader>
@@ -628,24 +754,24 @@ console.log("trendingData",trendingData);
             {trendingLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="animate-pulse border rounded-lg p-4">
-                    <div className="h-4 bg-gray-200 rounded w-2/3 mb-2"></div>
-                    <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                  <div key={i} className="animate-pulse border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                    <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-2/3 mb-2"></div>
+                    <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {trendingData.map((trend: TrendingData) => (
-                  <Card key={trend.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                  <Card key={trend.id} className="glass-card hover-lift cursor-pointer" onClick={() => handleIndexClick(trend.id)}>
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center space-x-2">
-                          <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                            {trend.name.includes('Space') ? <Rocket className="h-4 w-4 text-blue-600" /> :
-                             trend.name.includes('Energy') ? <Leaf className="h-4 w-4 text-green-600" /> :
-                             trend.name.includes('Gaming') ? <Gamepad2 className="h-4 w-4 text-purple-600" /> :
-                             <BarChart3 className="h-4 w-4 text-blue-600" />}
+                          <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center">
+                            {trend.name.includes('Space') ? <Rocket className="h-4 w-4 text-blue-600 dark:text-blue-400" /> :
+                             trend.name.includes('Energy') ? <Leaf className="h-4 w-4 text-green-600 dark:text-green-400" /> :
+                             trend.name.includes('Gaming') ? <Gamepad2 className="h-4 w-4 text-purple-600 dark:text-purple-400" /> :
+                             <BarChart3 className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
                           </div>
                           <Badge className={trend.badgeColor}>
                             {trend.badge}
@@ -655,15 +781,15 @@ console.log("trendingData",trendingData);
                           <Users className="h-4 w-4" />
                         </Button>
                       </div>
-                      <h3 className="font-semibold text-gray-900 mb-1">{trend.name}</h3>
-                      <p className="text-sm text-gray-600 mb-3">
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">{trend.name}</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                         {trend.stocks} stocks • Created by {trend.creator}
                       </p>
                       <div className="flex justify-between items-center">
-                        <span className={`text-lg font-semibold ${trend.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                        <span className={`text-lg font-semibold ${trend.isPositive ? 'performance-positive' : 'performance-negative'}`}>
                           {trend.isPositive ? '+' : ''}{trend.performance.toFixed(1)}%
                         </span>
-                        <span className="text-sm text-gray-500">7 days</span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">7 days</span>
                       </div>
                     </CardContent>
                   </Card>
@@ -674,21 +800,27 @@ console.log("trendingData",trendingData);
         </Card>
 
         {/* Performance Chart */}
-        <PerformanceChart />
+        {/* <PerformanceChart /> */}
       </div>
 
+      {/* Create Index Modal */}
+      <CreateIndexModal 
+        isOpen={isCreateModalOpen} 
+        onClose={() => setIsCreateModalOpen(false)} 
+      />
+
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 mt-12">
+      <footer className="glass-card border-t border-gray-200/50 dark:border-gray-800/50 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center space-x-2 mb-4">
-                <div className="w-6 h-6 bg-blue-600 rounded-lg flex items-center justify-center">
+                <div className="w-6 h-6 gradient-primary rounded-lg flex items-center justify-center">
                   <BarChart3 className="h-3 w-3 text-white" />
                 </div>
-                <span className="font-bold text-gray-900">Generated Assets</span>
+                <span className="font-bold text-gray-900 dark:text-gray-100">Generated Assets</span>
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
                 AI-powered investment tool that transforms ideas into investable stock indexes.
               </p>
             </div>
@@ -707,24 +839,24 @@ console.log("trendingData",trendingData);
               }
             ].map((section, index) => (
               <div key={index}>
-                <h3 className="font-semibold text-gray-900 mb-3">{section.title}</h3>
-                <ul className="space-y-2 text-sm text-gray-600">
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">{section.title}</h3>
+                <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                   {section.links.map((link, linkIndex) => (
                     <li key={linkIndex}>
-                      <Link href="#" className="hover:text-gray-900">{link}</Link>
+                      <Link href="#" className="hover:text-gray-900 dark:hover:text-gray-100 transition-colors">{link}</Link>
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
           </div>
-          <div className="border-t border-gray-200 mt-8 pt-8 flex justify-between items-center">
-            <p className="text-sm text-gray-600">© 2024 Generated Assets. All rights reserved.</p>
+          <div className="border-t border-gray-200 dark:border-gray-800 mt-8 pt-8 flex justify-between items-center">
+            <p className="text-sm text-gray-600 dark:text-gray-400">© 2024 Generated Assets. All rights reserved.</p>
             <div className="flex space-x-4">
               {['twitter', 'linkedin', 'github'].map((social) => (
-                <Link key={social} href="#" className="text-gray-400 hover:text-gray-600">
+                <Link key={social} href="#" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
                   <span className="sr-only">{social}</span>
-                  <div className="w-5 h-5 bg-gray-400 rounded"></div>
+                  <div className="w-5 h-5 bg-gray-400 dark:bg-gray-600 rounded"></div>
                 </Link>
               ))}
             </div>
