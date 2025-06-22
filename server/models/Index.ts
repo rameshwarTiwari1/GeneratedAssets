@@ -25,6 +25,14 @@ const IndexSchema = new mongoose.Schema({
   performance1y: Number,
   benchmarkSp500: Number,
   benchmarkNasdaq: Number,
+  aiAnalysis: {
+    investmentThesis: String,
+    riskProfile: String,
+    sectorBreakdown: String,
+    keyStrengths: [String],
+    potentialRisks: [String],
+    expectedPerformance: String,
+  },
   createdAt: { type: Date, default: Date.now },
   stocks: [StockSchema],
 });
