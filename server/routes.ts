@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import { storage } from "./storage";
+import { storage as storageMem, storageMongoose } from "./storage";
 import { generateIndexFromPrompt } from "./services/openai";
 import { 
   getStockData, 
@@ -13,6 +13,9 @@ import {
 import { generateBacktestingData } from "./services/backtesting";
 import { insertIndexSchema } from "@shared/schema";
 import { z } from "zod";
+import authRoutes from "./routes/auth";
+import indexRoutes from "./routes/index";
+import { authenticateToken } from "./middleware/auth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -87,10 +90,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   };
 
-  // Generate index from natural language prompt
-  app.post("/api/generate-index", async (req, res) => {
+  // Auth routes
+  app.use("/api/auth", authRoutes);
+  
+  // Index routes
+  app.use("/api/indexes", indexRoutes);
+
+  // Generate index from natural language prompt (protected route)
+  app.post("/api/generate-index", authenticateToken, async (req: any, res) => {
+    const storage = storageMongoose;
+    const storageMemOnly = storageMem;
     try {
       const { prompt } = req.body;
+      const userId = req.user._id.toString(); // Get user ID from authenticated request
       
       if (!prompt || typeof prompt !== 'string') {
         return res.status(400).json({ message: "Prompt is required" });
@@ -133,11 +145,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const performance7d = avgPerformance * 7; // Approximate weekly from daily
       const alpha1y = backtestingData.performance['1Y']?.alpha || 0;
       
-      // Create index in storage
+      // Create index in storage with userId
       const newIndex = await storage.createIndex({
         prompt,
         name: aiResponse.indexName,
         description: aiResponse.description,
+        userId, // Include userId
         isPublic: false,
         totalValue,
         performance1d: avgPerformance,
@@ -146,13 +159,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         performance1y: performance1y,
         benchmarkSp500: benchmarks.sp500,
         benchmarkNasdaq: benchmarks.nasdaq,
+        aiAnalysis: aiResponse.analysis, // Store AI analysis
       });
 
       // Add stocks to index
       const stocks = await Promise.all(
         stocksData.map(async (stockData) => {
-          return await storage.addStockToIndex(newIndex.id, {
-            indexId: newIndex.id,
+          return await storage.addStockToIndex(newIndex._id, {
+            indexId: newIndex._id as any,
             symbol: stockData.symbol,
             name: stockData.name,
             price: stockData.price,
@@ -167,8 +181,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Store historical backtesting data
       for (const point of backtestingData.historical.slice(-30)) { // Last 30 days
-        await storage.addHistoricalData({
-          indexId: newIndex.id,
+        await storageMongoose.addHistoricalData({
+          indexId: newIndex._id as any,
           date: point.date,
           value: point.portfolioValue,
           sp500Value: point.sp500Value,
@@ -181,6 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stocks,
         backtesting: backtestingData.performance,
         alpha: alpha1y,
+        aiAnalysis: aiResponse.analysis,
       };
 
       // Broadcast new index to connected clients
@@ -196,22 +211,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get index by ID with stocks
-  app.get("/api/index/:id", async (req, res) => {
+  // Get index by ID with stocks (protected - user can only access their own indexes)
+  app.get("/api/index/:id", authenticateToken, async (req: any, res) => {
+    const storage = storageMongoose;
     try {
-      const id = parseInt(req.params.id);
+      const id = req.params.id;
+      const userId = req.user._id.toString();
       
-      if (isNaN(id)) {
+      if (!id || !id.match(/^[a-fA-F0-9]{24}$/)) {
         return res.status(400).json({ message: "Invalid index ID" });
       }
-
-      const index = await storage.getIndex(id);
+      
+      const index = await storage.getIndex(String(id));
       if (!index) {
         return res.status(404).json({ message: "Index not found" });
       }
-
-      const stocks = await storage.getStocksByIndexId(id);
       
+      // Check if user owns this index or if it's public
+      if (index.userId !== userId && !index.isPublic) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const stocks = await storage.getStocksByIndexId(String(id));
       res.json({
         ...index,
         stocks,
@@ -222,17 +243,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all indexes with stocks
-  app.get("/api/indexes", async (req, res) => {
+  // Get all indexes for the authenticated user (protected)
+  app.get("/api/indexes", authenticateToken, async (req: any, res) => {
+    const storage = storageMongoose;
     try {
-      const indexes = await storage.getAllIndexes();
-      const indexesWithStocks = [];
-      
-      for (const index of indexes) {
-        const stocks = await storage.getStocksByIndexId(index.id);
-        indexesWithStocks.push({ ...index, stocks });
-      }
-      
+      const userId = req.user._id.toString();
+      const indexes = await storage.getAllIndexes(userId);
+      const indexesWithStocks = await Promise.all(
+        indexes.map(async (index: any) => {
+          const stocks = await storage.getStocksByIndexId(String(index._id));
+          return { ...index, stocks };
+        })
+      );
       res.json(indexesWithStocks);
     } catch (error) {
       console.error("Get indexes error:", error);
@@ -240,40 +262,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get trending/public indexes
+  // Get trending/public indexes (public route - no authentication required)
   app.get("/api/trending-indexes", async (req, res) => {
+    const storage = storageMongoose;
     try {
-      // Get all indexes and add trending metrics
-      const allIndexes = await storage.getAllIndexes();
-      console.log("allIndexes",allIndexes);
+      // Get only public indexes using the dedicated method
+      const publicIndexes = await storage.getTrendingIndexes();
+      console.log(`Public trending indexes found: ${publicIndexes.length}`);
       
-      // Sort by performance and limit to top 10
-      const trending = allIndexes
-        .map(index => ({
-          ...index,
-          // Add trending metrics
-          followers: Math.floor(Math.random() * 1000) + 100, // Simulate followers
-          views: Math.floor(Math.random() * 5000) + 1000,    // Simulate views
-          performanceScore: index.performance7d * 0.6 + index.performance30d * 0.4 // Weighted score
-        }))
-        .sort((a, b) => b.performanceScore - a.performanceScore)
+      if (publicIndexes.length === 0) {
+        console.log('No public trending indexes found in database');
+        return res.json([]);
+      }
+      
+      // Log first few indexes for debugging
+      console.log('Sample public trending indexes:', publicIndexes.slice(0, 3).map(i => ({
+        id: i._id,
+        name: i.name,
+        isPublic: i.isPublic,
+        performance7d: i.performance7d,
+        createdAt: i.createdAt
+      })));
+      
+      // Calculate trending score based on performance and recency
+      const trendingIndexes = publicIndexes
+        .map((index: any) => {
+          const daysSinceCreation = Math.max(1, (Date.now() - new Date(index.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+          const performanceScore = (index.performance7d || 0) * 0.6 + (index.performance30d || 0) * 0.4;
+          const recencyScore = Math.max(0, 10 - daysSinceCreation); // Newer indexes get higher score
+          const trendingScore = performanceScore + recencyScore;
+          
+          return {
+            ...index,
+            trendingScore,
+            daysSinceCreation: Math.floor(daysSinceCreation)
+          };
+        })
+        .sort((a: any, b: any) => b.trendingScore - a.trendingScore)
         .slice(0, 10);
-      
-      res.json(trending);
+
+      console.log(`Top trending public indexes:`, trendingIndexes.slice(0, 3).map(i => ({
+        name: i.name,
+        trendingScore: i.trendingScore,
+        isPublic: i.isPublic
+      })));
+
+      // Add mock data for trending indexes
+      const trendingWithMockData = trendingIndexes.map((index: any) => ({
+        ...index,
+        followers: Math.floor(Math.random() * 1000) + 100,
+        views: Math.floor(Math.random() * 5000) + 1000,
+        performanceScore: index.trendingScore,
+        isPublic: true, // All indexes in this list are public
+        // Add some variety to make it look more realistic
+        category: getCategoryFromName(index.name),
+        riskLevel: ['Low', 'Medium', 'High'][Math.floor(Math.random() * 3)],
+        lastUpdated: new Date().toISOString()
+      }));
+
+      console.log(`Found ${trendingWithMockData.length} trending public indexes`);
+      res.json(trendingWithMockData);
     } catch (error) {
       console.error("Get trending indexes error:", error);
       res.status(500).json({ message: "Failed to get trending indexes" });
     }
   });
 
-  // Update index (make public/private, edit details)
-  app.patch("/api/index/:id", async (req, res) => {
+  // Update index (protected - user can only update their own indexes)
+  app.patch("/api/index/:id", authenticateToken, async (req: any, res) => {
+    const storage = storageMongoose;
     try {
-      const id = parseInt(req.params.id);
+      const id = req.params.id;
+      const userId = req.user._id.toString();
       const updates = req.body;
       
-      if (isNaN(id)) {
+      if (!id || !id.match(/^[a-fA-F0-9]{24}$/)) {
         return res.status(400).json({ message: "Invalid index ID" });
+      }
+
+      // First check if user owns this index
+      const existingIndex = await storage.getIndex(id);
+      if (!existingIndex) {
+        return res.status(404).json({ message: "Index not found" });
+      }
+      
+      if (existingIndex.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const updatedIndex = await storage.updateIndex(id, updates);
@@ -295,10 +369,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get portfolio summary
-  app.get("/api/portfolio", async (req, res) => {
+  // Toggle index public/private status (protected - user can only update their own indexes)
+  app.patch("/api/index/:id/toggle-public", authenticateToken, async (req: any, res) => {
+    const storage = storageMongoose;
     try {
-      const summary = await storage.getPortfolioSummary();
+      const id = req.params.id;
+      const userId = req.user._id.toString();
+      
+      if (!id || !id.match(/^[a-fA-F0-9]{24}$/)) {
+        return res.status(400).json({ message: "Invalid index ID" });
+      }
+
+      // First check if user owns this index
+      const existingIndex = await storage.getIndex(id);
+      if (!existingIndex) {
+        return res.status(404).json({ message: "Index not found" });
+      }
+      
+      if (existingIndex.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Toggle the isPublic status
+      const newPublicStatus = !existingIndex.isPublic;
+      const updatedIndex = await storage.updateIndex(id, { isPublic: newPublicStatus });
+      
+      if (!updatedIndex) {
+        return res.status(404).json({ message: "Index not found" });
+      }
+
+      // Broadcast update to connected clients
+      broadcast({
+        type: 'index_updated',
+        data: updatedIndex,
+      });
+
+      res.json({
+        ...updatedIndex,
+        message: `Index is now ${newPublicStatus ? 'public' : 'private'}`
+      });
+    } catch (error) {
+      console.error("Toggle public status error:", error);
+      res.status(500).json({ message: "Failed to update index visibility" });
+    }
+  });
+
+  // Get portfolio summary for authenticated user (protected)
+  app.get("/api/portfolio", authenticateToken, async (req: any, res) => {
+    const storage = storageMongoose;
+    try {
+      const userId = req.user._id.toString();
+      const userIndexes = await storage.getAllIndexes(userId);
+      
+      // Calculate portfolio summary from user's indexes
+      const totalValue = userIndexes.reduce((sum, index) => sum + (index.totalValue || 0), 0);
+      const totalChange1d = userIndexes.reduce((sum, index) => 
+        sum + ((index.totalValue || 0) * (index.performance1d || 0) / 100), 0
+      );
+      const totalChangePercent1d = totalValue > 0 ? (totalChange1d / totalValue) * 100 : 0;
+      const avgPerformance = userIndexes.length > 0 ? 
+        userIndexes.reduce((sum, index) => sum + (index.performance1d || 0), 0) / userIndexes.length : 0;
+      
+      const totalStocks = userIndexes.reduce((sum, index) => sum + (index.stocks?.length || 0), 0);
+
+      const summary = {
+        totalValue,
+        totalChange1d,
+        totalChangePercent1d,
+        activeIndexes: userIndexes.length,
+        totalStocks,
+        avgPerformance,
+      };
+      
       res.json(summary);
     } catch (error) {
       console.error("Get portfolio error:", error);
@@ -319,7 +461,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Try Alpha Vantage search first
       try {
-        const searchUrl = `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(query)}&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`;
+        const searchUrl = `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(String(query))}&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`;
         console.log(`Calling Alpha Vantage: ${searchUrl}`);
         const searchResponse = await fetch(searchUrl);
         
@@ -354,7 +496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         if (!process.env.FINNHUB_API_KEY) throw new Error('FINNHUB_API_KEY not set');
         
-        const finnhubUrl = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${process.env.FINNHUB_API_KEY}`;
+        const finnhubUrl = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(String(query))}&token=${process.env.FINNHUB_API_KEY}`;
         console.log(`Calling Finnhub: ${finnhubUrl}`);
         const finnhubResponse = await fetch(finnhubUrl);
         
@@ -389,7 +531,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         if (!process.env.POLYGON_API_KEY) throw new Error('POLYGON_API_KEY not set');
         
-        const searchUrl = `https://api.polygon.io/v3/reference/tickers?search=${encodeURIComponent(query)}&active=true&limit=20&apiKey=${process.env.POLYGON_API_KEY}`;
+        const searchUrl = `https://api.polygon.io/v3/reference/tickers?search=${encodeURIComponent(String(query))}&active=true&limit=20&apiKey=${process.env.POLYGON_API_KEY}`;
         console.log(`Calling Polygon: ${searchUrl}`);
         const searchResponse = await fetch(searchUrl, {
           headers: {
@@ -514,27 +656,32 @@ app.get("/api/stock-price/:symbol", async (req, res) => {
   }
 });
 
-
-
-  // Get backtesting data for an index
-  app.get("/api/index/:id/backtest", async (req, res) => {
+  // Get backtesting data for an index (protected - user can only access their own indexes)
+  app.get("/api/index/:id/backtest", authenticateToken, async (req: any, res) => {
+    const storage = storageMongoose;
     try {
-      const id = parseInt(req.params.id);
+      const id = req.params.id;
+      const userId = req.user._id.toString();
       
-      if (isNaN(id)) {
+      if (!id || !id.match(/^[a-fA-F0-9]{24}$/)) {
         return res.status(400).json({ message: "Invalid index ID" });
       }
 
-      const index = await storage.getIndex(id);
-      const stocks = await storage.getStocksByIndexId(id);
-      const historicalData = await storage.getHistoricalData(id, 365); // Get 1 year of data
-      
+      const index = await storage.getIndex(String(id));
       if (!index) {
         return res.status(404).json({ message: "Index not found" });
       }
-
+      
+      // Check if user owns this index or if it's public
+      if (index.userId !== userId && !index.isPublic) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const stocks = await storage.getStocksByIndexId(String(id));
+      const historicalData = await storageMongoose.getHistoricalData(String(id), 365); // Get 1 year of data
+      
       // Generate comprehensive backtesting analysis
-      const stocksForBacktest = stocks.map(stock => ({
+      const stocksForBacktest = stocks.map((stock: any) => ({
         symbol: stock.symbol,
         name: stock.name,
         price: stock.price,
@@ -543,11 +690,11 @@ app.get("/api/stock-price/:symbol", async (req, res) => {
         change1d: stock.change1d,
         changePercent1d: stock.changePercent1d,
       }));
-      const backtestingData = generateBacktestingData(stocksForBacktest, index.name);
+      const backtestingData = generateBacktestingData(stocksForBacktest, index.name || '');
       
       res.json({
         index: {
-          id: index.id,
+          id: index._id,
           name: index.name,
           description: index.description,
           totalValue: index.totalValue,
@@ -573,13 +720,14 @@ app.get("/api/stock-price/:symbol", async (req, res) => {
     }
   });
 
-  // Get trending/public indexes with enhanced metrics
+  // Get trending/public indexes with enhanced metrics (public route)
   app.get("/api/explore", async (req, res) => {
     try {
-      const allIndexes = await storage.getAllIndexes();
+      const storage = storageMongoose;
+      const publicIndexes = await storage.getTrendingIndexes();
       
       // Simulate public indexes with authentic performance data
-      const exploreData = allIndexes.slice(0, 20).map(index => ({
+      const exploreData = publicIndexes.slice(0, 20).map((index: any) => ({
         ...index,
         isPublic: true,
         creator: `@investor${Math.floor(Math.random() * 1000)}`,
@@ -590,7 +738,7 @@ app.get("/api/stock-price/:symbol", async (req, res) => {
       }));
       
       // Sort by performance for trending
-      exploreData.sort((a, b) => b.performance7d - a.performance7d);
+      exploreData.sort((a: any, b: any) => (b.performance7d || 0) - (a.performance7d || 0));
       
       res.json(exploreData);
     } catch (error) {
@@ -599,47 +747,69 @@ app.get("/api/stock-price/:symbol", async (req, res) => {
     }
   });
 
-  // Napkin AI integration endpoint
-  app.post("/api/napkin", async (req, res) => {
+  // Napkin AI integration endpoint (protected - user can only access their own indexes)
+  app.post("/api/napkin", authenticateToken, async (req: any, res) => {
     try {
       const { indexId } = req.body;
+      const userId = req.user._id.toString();
+      
+      console.log('🎨 Napkin AI request received:', { indexId, userId });
       
       if (!indexId) {
+        console.log('❌ No indexId provided');
         return res.status(400).json({ message: "Index ID is required" });
       }
 
+      const storage = storageMongoose;
       const index = await storage.getIndex(indexId);
-      const stocks = await storage.getStocksByIndexId(indexId);
+      
+      console.log('📊 Index found:', index ? { id: index._id, name: index.name, userId: index.userId } : 'Not found');
       
       if (!index) {
+        console.log('❌ Index not found');
         return res.status(404).json({ message: "Index not found" });
       }
+      
+      // Check if user owns this index or if it's public
+      if (index.userId !== userId && !index.isPublic) {
+        console.log('❌ Access denied - user does not own index and it is not public');
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const stocks = await storage.getStocksByIndexId(indexId);
+      console.log('📈 Stocks found:', stocks.length);
 
       // Prepare chart-ready data for Napkin AI
       const chartData = {
         title: index.name,
-        description: index.description,
-        data: stocks.map(stock => ({
+        description: index.description || `AI-generated index based on: ${index.prompt}`,
+        data: stocks.map((stock: any) => ({
           label: stock.symbol,
           value: stock.price,
           change: stock.changePercent1d,
           sector: stock.sector,
         })),
         performance: {
-          '1d': index.performance1d,
-          '7d': index.performance7d,
-          '30d': index.performance30d,
-          '1y': index.performance1y,
+          '1d': index.performance1d || 0,
+          '7d': index.performance7d || 0,
+          '30d': index.performance30d || 0,
+          '1y': index.performance1y || 0,
         },
         benchmarks: {
-          sp500: index.benchmarkSp500,
-          nasdaq: index.benchmarkNasdaq,
+          sp500: index.benchmarkSp500 || 0,
+          nasdaq: index.benchmarkNasdaq || 0,
         },
       };
 
+      console.log('✅ Chart data prepared successfully:', {
+        title: chartData.title,
+        stocksCount: chartData.data.length,
+        performance: chartData.performance
+      });
+
       res.json(chartData);
     } catch (error) {
-      console.error("Napkin API error:", error);
+      console.error("❌ Napkin API error:", error);
       res.status(500).json({ message: "Failed to prepare chart data" });
     }
   });
@@ -647,6 +817,7 @@ app.get("/api/stock-price/:symbol", async (req, res) => {
   // Get market data for major indices
   app.get('/api/market-data', async (req, res) => {
     try {
+      const storage = storageMongoose;
       const benchmarkData = await getBenchmarkData();
       
       // Get additional indices data
@@ -697,6 +868,18 @@ app.get("/api/stock-price/:symbol", async (req, res) => {
         error: 'Failed to fetch market data',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
+    }
+  });
+
+  // Get global statistics (public route - no authentication required)
+  app.get("/api/stats", async (req, res) => {
+    const storage = storageMongoose;
+    try {
+      const stats = await storage.getGlobalStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Get stats error:", error);
+      res.status(500).json({ message: "Failed to get statistics" });
     }
   });
 
