@@ -18,6 +18,7 @@ import {
   Lock
 } from 'lucide-react';
 import { Link } from 'wouter';
+import { authService } from '@/lib/auth';
 
 interface Stock {
   id: string;
@@ -25,11 +26,15 @@ interface Stock {
   name: string;
   weight: number;
   price: number;
-  change: number;
+  change1d?: number;
+  changePercent1d?: number;
+  marketCap?: number;
+  sector?: string;
 }
 
 interface IndexData {
-  id: number;
+  _id: string;
+  id?: number;
   name: string;
   description?: string;
   prompt?: string;
@@ -45,10 +50,17 @@ interface IndexData {
 
 export default function IndexDetail() {
   const [match, params] = useRoute('/index/:id');
-  const indexId = params?.id ? parseInt(params.id) : null;
+  const indexId = params?.id || null;
 
   const { data: indexData, isLoading, error } = useQuery<IndexData>({
-    queryKey: ['/api/index', indexId],
+    queryKey: ['index', indexId],
+    queryFn: async () => {
+      const response = await authService.apiRequest(`http://localhost:5000/api/index/${indexId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch index');
+      }
+      return response.json();
+    },
     enabled: !!indexId,
   });
 
@@ -115,21 +127,21 @@ export default function IndexDetail() {
   const isPositive = indexData.performance1d >= 0;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-indigo-50/30 dark:from-gray-900 dark:via-blue-950/30 dark:to-indigo-950/30">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
+      <header className="glass-card border-b border-gray-200/50 dark:border-gray-800/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
               <Link href="/">
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" className="hover:bg-gray-100 dark:hover:bg-gray-800">
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Back to Dashboard
                 </Button>
               </Link>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">{indexData.name}</h1>
-                <div className="flex items-center space-x-4 text-sm text-gray-600">
+                <h1 className="text-xl font-bold text-gradient">{indexData.name}</h1>
+                <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
                   <div className="flex items-center space-x-1">
                     <Calendar className="h-3 w-3" />
                     <span>Created {formatDate(indexData.createdAt)}</span>
@@ -155,11 +167,11 @@ export default function IndexDetail() {
               </div>
             </div>
             <div className="flex space-x-2">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
                 <Edit className="h-4 w-4 mr-2" />
                 Edit
               </Button>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
                 <Share className="h-4 w-4 mr-2" />
                 Share
               </Button>
@@ -171,19 +183,19 @@ export default function IndexDetail() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Index Overview */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-          <Card>
+          <Card className="glass-card hover-lift">
             <CardContent className="pt-6">
               <div className="flex items-center space-x-2 mb-2">
-                <DollarSign className="h-4 w-4 text-gray-500" />
-                <span className="text-sm text-gray-600">Total Value</span>
+                <DollarSign className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                <span className="text-sm text-gray-600 dark:text-gray-400">Total Value</span>
               </div>
-              <div className="text-2xl font-bold text-gray-900">
+              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                 {formatCurrency(indexData.totalValue)}
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-card hover-lift">
             <CardContent className="pt-6">
               <div className="flex items-center space-x-2 mb-2">
                 {isPositive ? (
@@ -191,33 +203,33 @@ export default function IndexDetail() {
                 ) : (
                   <TrendingDown className="h-4 w-4 text-red-500" />
                 )}
-                <span className="text-sm text-gray-600">1D Performance</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">1D Performance</span>
               </div>
-              <div className={`text-2xl font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+              <div className={`text-2xl font-bold ${isPositive ? 'performance-positive' : 'performance-negative'}`}>
                 {isPositive ? '+' : ''}{indexData.performance1d?.toFixed(2) || '0.00'}%
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-card hover-lift">
             <CardContent className="pt-6">
               <div className="flex items-center space-x-2 mb-2">
                 <BarChart3 className="h-4 w-4 text-blue-500" />
-                <span className="text-sm text-gray-600">vs S&P 500</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">vs S&P 500</span>
               </div>
-              <div className="text-2xl font-bold text-blue-600">
+              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                 +{((indexData.performance1d || 0) - 0.8).toFixed(2)}%
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-card hover-lift">
             <CardContent className="pt-6">
               <div className="flex items-center space-x-2 mb-2">
                 <BarChart3 className="h-4 w-4 text-purple-500" />
-                <span className="text-sm text-gray-600">vs NASDAQ</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">vs NASDAQ</span>
               </div>
-              <div className="text-2xl font-bold text-purple-600">
+              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                 +{((indexData.performance1d || 0) + 0.3).toFixed(2)}%
               </div>
             </CardContent>
@@ -226,14 +238,14 @@ export default function IndexDetail() {
 
         {/* Index Description */}
         {indexData.description && (
-          <Card className="mb-8">
+          <Card className="glass-card hover-lift mb-8">
             <CardHeader>
-              <CardTitle>Investment Thesis</CardTitle>
+              <CardTitle className="text-gradient">Investment Thesis</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-700 leading-relaxed">{indexData.description}</p>
+              <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{indexData.description}</p>
               <div className="mt-4">
-                <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
                   Generated from: "{indexData.prompt}"
                 </Badge>
               </div>
@@ -241,27 +253,104 @@ export default function IndexDetail() {
           </Card>
         )}
 
-        {/* Performance Chart */}
-        <div className="mb-8">
-          <PerformanceChart 
-            indexId={indexData.id}
-            data={{
-              portfolio: indexData.performance1y || indexData.performance1d || 0,
-              sp500: indexData.benchmarkSp500 ? (indexData.benchmarkSp500 / 500 - 1) * 100 : 8.9,
-              nasdaq: indexData.benchmarkNasdaq ? (indexData.benchmarkNasdaq / 400 - 1) * 100 : 10.2,
-              alpha: (indexData.performance1y || indexData.performance1d || 0) - 8.9,
-              beta: 1.2,
-              sharpeRatio: 0.85,
-              maxDrawdown: 18.5,
-              volatility: 22.3,
-            }}
-          />
+        {/* Performance Chart and Napkin AI */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+          {/* Left side: Performance metrics */}
+          <div className="lg:col-span-2">
+            <PerformanceChart 
+              indexId={indexData._id}
+              data={{
+                portfolio: indexData.performance1y || indexData.performance1d || 0,
+                sp500: indexData.benchmarkSp500 ? (indexData.benchmarkSp500 / 500 - 1) * 100 : 8.9,
+                nasdaq: indexData.benchmarkNasdaq ? (indexData.benchmarkNasdaq / 400 - 1) * 100 : 10.2,
+                alpha: (indexData.performance1y || indexData.performance1d || 0) - 8.9,
+                beta: 1.2,
+                sharpeRatio: 0.85,
+                maxDrawdown: 18.5,
+                volatility: 22.3,
+              }}
+            />
+          </div>
+
+          {/* Right side: Napkin AI Chart */}
+          <div className="space-y-6">
+            <Card className="glass-card hover-lift">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-gradient">AI Analysis</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="text-center p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/50 dark:to-purple-950/50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                      {((indexData.performance1y || indexData.performance1d || 0) - 8.9).toFixed(1)}%
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Return</div>
+                  </div>
+                  
+                  <div className="text-center p-4 bg-green-50 dark:bg-green-950/50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                      {0.85}
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Stability</div>
+                  </div>
+                  
+                  <div className="text-center p-4 bg-purple-50 dark:bg-purple-950/50 rounded-lg">
+                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                      {(indexData.performance1y || indexData.performance1d || 0).toFixed(1)}%
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Performance</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Quick Stats */}
+            <Card className="glass-card hover-lift">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-gradient">Quick Stats</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Total Stocks</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">{indexData.stocks?.length || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Avg Market Cap</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                      {indexData.stocks && indexData.stocks.length > 0 
+                        ? `$${((indexData.stocks.reduce((sum, stock) => sum + (stock.marketCap || 0), 0) / indexData.stocks.length) / 1e9).toFixed(1)}B`
+                        : 'N/A'
+                      }
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Top Sector</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                      {indexData.stocks && indexData.stocks.length > 0 
+                        ? (() => {
+                            const sectors = indexData.stocks.map(s => s.sector).filter(Boolean);
+                            const sectorCounts = sectors.reduce((acc, sector) => {
+                              acc[sector!] = (acc[sector!] || 0) + 1;
+                              return acc;
+                            }, {} as Record<string, number>);
+                            const topSector = Object.entries(sectorCounts).sort(([,a], [,b]) => b - a)[0];
+                            return topSector ? topSector[0] : 'N/A';
+                          })()
+                        : 'N/A'
+                      }
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Holdings Table */}
-        <Card>
+        <Card className="glass-card hover-lift">
           <CardHeader>
-            <CardTitle>Holdings ({indexData.stocks?.length || 0} stocks)</CardTitle>
+            <CardTitle className="text-gradient">Holdings ({indexData.stocks?.length || 0} stocks)</CardTitle>
           </CardHeader>
           <CardContent>
             <StockTable stocks={indexData.stocks || []} />

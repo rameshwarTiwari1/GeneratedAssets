@@ -249,5 +249,68 @@ function calculateVolatility(data: HistoricalPoint[]): number {
   const variance = returns.reduce((sum, ret) => sum + Math.pow(ret - avgReturn, 2), 0) / returns.length;
   
   // Annualized volatility
-  return Math.sqrt(variance * 365) * 100;
+  return Math.sqrt(variance) * Math.sqrt(365) * 100; // Return as annualized percentage
+}
+
+// New function for detailed backtest chart data
+export function getDetailedBacktest(
+  historicalData: HistoricalPoint[],
+  period: '1Y' | '5Y' | '10Y' = '10Y'
+): any {
+  const periodDaysMap = {
+    '1Y': 365,
+    '5Y': 365 * 5,
+    '10Y': 365 * 10
+  };
+
+  const days = periodDaysMap[period];
+  const startIndex = Math.max(0, historicalData.length - days);
+  const data = historicalData.slice(startIndex);
+
+  if (data.length === 0) {
+    return {
+      chartData: [],
+      totalReturn: 0,
+      maxDrawdown: 0,
+      sp500TotalReturn: 0,
+      sp500MaxDrawdown: 0
+    };
+  }
+  
+  const chartData = [];
+  let portfolioPeak = data[0].portfolioValue;
+  let sp500Peak = data[0].sp500Value;
+
+  for(const point of data) {
+    // Calculate returns relative to the start
+    const portfolioReturn = (point.portfolioValue / data[0].portfolioValue - 1) * 100;
+    const sp500Return = (point.sp500Value / data[0].sp500Value - 1) * 100;
+
+    // Calculate drawdown for portfolio
+    if (point.portfolioValue > portfolioPeak) {
+      portfolioPeak = point.portfolioValue;
+    }
+    const portfolioDrawdown = (portfolioPeak - point.portfolioValue) / portfolioPeak * -100;
+
+    chartData.push({
+      date: point.date.toISOString().split('T')[0],
+      asset: portfolioReturn,
+      benchmark: sp500Return,
+      drawdown: portfolioDrawdown
+    });
+  }
+
+  const totalReturn = (data[data.length - 1].portfolioValue / data[0].portfolioValue - 1) * 100;
+  const sp500TotalReturn = (data[data.length - 1].sp500Value / data[0].sp500Value - 1) * 100;
+  
+  const maxDrawdown = calculateMaxDrawdown(data);
+  const sp500MaxDrawdown = calculateMaxDrawdown(data.map(d => ({...d, portfolioValue: d.sp500Value})));
+
+  return {
+    chartData,
+    totalReturn,
+    maxDrawdown: -maxDrawdown, // Return as negative percentage
+    sp500TotalReturn,
+    sp500MaxDrawdown: -sp500MaxDrawdown // Return as negative
+  };
 }
